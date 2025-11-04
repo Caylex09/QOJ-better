@@ -8,6 +8,7 @@
 // @match        https://huang.lt/*
 // @match        https://contest.ucup.ac/*
 // @grant        none
+// @license      MIT
 // ==/UserScript==
 
 function switchDomain() {
