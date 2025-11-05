@@ -17,7 +17,11 @@ function switchDomain() {
     if (document.getElementById('domain-switcher')) return;
     const currentHost = location.host;
     const pathname = location.pathname + location.search + location.hash;
-    const isContest = pathname.includes('/contest/') || pathname.includes('/contests') || pathname.includes('/user');
+    const isContest =
+        pathname.includes('/contest/') ||
+        pathname.includes('/contests') ||
+        pathname.includes('/user') ||
+        pathname.includes('/results');
     const domains = isContest
         ? ['qoj.ac', 'jiang.ly', 'huang.lt', 'oj.qiuly.org', 'contest.ucup.ac']
         : ['qoj.ac', 'jiang.ly', 'huang.lt', 'oj.qiuly.org'];
