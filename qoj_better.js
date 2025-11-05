@@ -1,12 +1,13 @@
 // ==UserScript==
 // @name         QOJ Better
 // @namespace    http://tampermonkey.net/
-// @version      1.1
+// @version      1.2
 // @description  Make QOJ great again!
 // @match        https://qoj.ac/*
 // @match        https://jiang.ly/*
 // @match        https://huang.lt/*
 // @match        https://contest.ucup.ac/*
+// @match        https://oj.qiuly.org/*
 // @grant        none
 // @license      MIT
 // @author       cyx
