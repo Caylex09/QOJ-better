@@ -9,6 +9,7 @@
 // @match        https://contest.ucup.ac/*
 // @grant        none
 // @license      MIT
+// @author       cyx
 // ==/UserScript==
 
 function switchDomain() {
@@ -17,8 +18,8 @@ function switchDomain() {
     const pathname = location.pathname + location.search + location.hash;
     const isContest = pathname.includes('/contest/') || pathname.includes('/contests') || pathname.includes('/user');
     const domains = isContest
-        ? ['qoj.ac', 'jiang.ly', 'huang.lt', 'contest.ucup.ac']
-        : ['qoj.ac', 'jiang.ly', 'huang.lt'];
+        ? ['qoj.ac', 'jiang.ly', 'huang.lt', 'oj.qiuly.org', 'contest.ucup.ac']
+        : ['qoj.ac', 'jiang.ly', 'huang.lt', 'oj.qiuly.org'];
 
     // 构造域名切换内容
     const span = document.createElement('span');
