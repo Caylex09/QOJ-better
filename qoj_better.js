@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         QOJ Better
 // @namespace    http://tampermonkey.net/
-// @version      1.3
+// @version      1.4
 // @description  Make QOJ great again!
 // @match        https://qoj.ac/*
 // @match        https://jiang.ly/*
@@ -153,9 +153,6 @@ function viewInContestLinks() {
         a.insertAdjacentElement('afterend', viewLink);
     });
 };
-
-
-
 function addAcTag() {
     if (window.__qoj_fullscore_lock) return;
     window.__qoj_fullscore_lock = true;
@@ -190,6 +187,23 @@ function addAcTag() {
                     badge.href = `${sub}`;
                     badge.target = '_blank';
                     infoRow.appendChild(badge);
+                    const submitLink = document.querySelector('a.nav-link[href="#tab-submit-answer"]');
+                    if (!submitLink) return;
+
+                    if (submitLink.classList.contains('submit-green')) return;
+
+                    submitLink.classList.add('submit-green');
+
+                    const style = document.createElement('style');
+                    style.textContent = `
+                        a.nav-link.submit-green {
+                            color: #00cc00 !important;
+                        }
+                        a.nav-link.submit-green:hover {
+                            color: #00cc00 !important;
+                        }
+                    `;
+                    document.head.appendChild(style);
                 }
             })
             .catch(err => console.error('检测满分失败:', err))
