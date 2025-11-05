@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         QOJ Better
 // @namespace    http://tampermonkey.net/
-// @version      1.2
+// @version      1.3
 // @description  Make QOJ great again!
 // @match        https://qoj.ac/*
 // @match        https://jiang.ly/*
@@ -12,6 +12,25 @@
 // @license      MIT
 // @author       cyx
 // ==/UserScript==
+
+// 获取题号
+function getProblemId() {
+    const matchContest = location.pathname.match(/\/contest\/(\d+)\/problem\/(\d+)/);
+    if (matchContest) return matchContest[2];
+    const matchProblem = location.pathname.match(/\/problem\/(\d+)/);
+    if (matchProblem) return matchProblem[1];
+    return null;
+}
+
+// 获取用户名
+function getUsername() {
+    const userLink = document.querySelector('a.dropdown-item[href*="/user/profile/"]');
+    if (userLink) {
+        const match = userLink.href.match(/\/user\/profile\/([^/?#]+)/);
+        if (match) return match[1];
+    }
+    return null;
+}
 
 function switchDomain() {
     if (document.getElementById('domain-switcher')) return;
@@ -134,6 +153,55 @@ function viewInContestLinks() {
         a.insertAdjacentElement('afterend', viewLink);
     });
 };
+
+
+
+function addAcTag() {
+    if (window.__qoj_fullscore_lock) return;
+    window.__qoj_fullscore_lock = true;
+    const pid = getProblemId();
+    const username = getUsername();
+    if (!pid || !username) return;
+    try {
+        const pid = getProblemId();
+        const username = getUsername();
+        if (!pid || !username) return;
+
+        const infoRow = document.querySelector('.row.d-flex.justify-content-center');
+        if (!infoRow) return;
+        if (infoRow.querySelector('.badge-fullscore')) return;
+
+        const totalEl = [...infoRow.querySelectorAll('.badge.badge-secondary')]
+            .find(e => e.textContent.includes('Total points'));
+        if (!totalEl) return;
+
+        const total = parseFloat(totalEl.textContent.replace(/[^\d.]/g, ''));
+        if (isNaN(total)) return;
+
+        fetch(`/submissions?problem_id=${pid}&submitter=${username}&min_score=${total}&max_score=${total}`)
+            .then(res => res.text())
+            .then(html => {
+                const match = html.match(/<td><a href="(\/submission\/\d+)">/);
+                if (match) {
+                    const sub = match[1];
+                    const badge = document.createElement('a');
+                    badge.className = 'badge badge-success mr-1 badge-fullscore';
+                    badge.textContent = 'Accepted ✓';
+                    badge.href = `${sub}`;
+                    badge.target = '_blank';
+                    infoRow.appendChild(badge);
+                }
+            })
+            .catch(err => console.error('检测满分失败:', err))
+            .finally(() => {
+                setTimeout(() => { window.__qoj_fullscore_lock = false; }, 100);
+            });
+    } catch (e) {
+        console.error(e);
+        window.__qoj_fullscore_lock = false;
+    }
+}
+
 (function () {
     'use strict';
     // --- 定义主函数 ---
@@ -142,6 +210,7 @@ function viewInContestLinks() {
         backProblem();
         viewSubmissions();
         viewInContestLinks();
+        addAcTag();
     }
 
     // --- 初次执行 ---
@@ -152,9 +221,9 @@ function viewInContestLinks() {
         // 检查关键元素是否存在
         const needRun =
             document.querySelector('.alert.alert-primary') || // 可能是 viewInContestLinks 所需
-            document.querySelector('ul.nav.nav-tabs') ||      // viewSubmissions / backProblem
+            document.querySelector('ul.nav.nav-tabs') || // viewSubmissions / backProblem
             document.querySelector('.nav-link.dropdown-toggle') || // 登录状态
-            document.querySelector('.nav.nav-pills.float-right');  // 游客状态
+            document.querySelector('.nav.nav-pills.float-right'); // 游客状态
 
         if (needRun) {
             observer.disconnect(); // 先断开，防止重复触发
