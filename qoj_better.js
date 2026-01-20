@@ -42,8 +42,8 @@ function switchDomain() {
         pathname.includes('/user') ||
         pathname.includes('/results');
     const domains = isContest
-        ? ['qoj.ac', 'jiang.ly', 'huang.lt', 'oj.qiuly.org', 'contest.ucup.ac']
-        : ['qoj.ac', 'jiang.ly', 'huang.lt', 'oj.qiuly.org'];
+        ? ['qoj.ac', 'jiang.ly', 'huang.lt', 'oj.qiuly.org', 'relia.uk', 'contest.ucup.ac']
+        : ['qoj.ac', 'jiang.ly', 'huang.lt', 'oj.qiuly.org', 'relia.uk'];
 
     // 构造域名切换内容
     const span = document.createElement('span');
