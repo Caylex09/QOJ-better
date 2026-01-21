@@ -8,6 +8,7 @@
 // @match        https://huang.lt/*
 // @match        https://contest.ucup.ac/*
 // @match        https://oj.qiuly.org/*
+// @match        https://relia.uk/*
 // @grant        none
 // @license      MIT
 // @author       cyx
