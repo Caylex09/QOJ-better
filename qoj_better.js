@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         QOJ Better
 // @namespace    http://tampermonkey.net/
-// @version      1.6
+// @version      1.7
 // @description  Make QOJ great again!
 // @match        https://qoj.ac/*
 // @match        https://jiang.ly/*
@@ -14,6 +14,12 @@
 // @license      MIT
 // @author       cyx
 // ==/UserScript==
+
+// 全局状态
+window.onlyUCUPTeams = false;
+window.cachedProblemIndices = null;
+
+const RATING_CONFIG = { BASE: 4100, K: 950 };
 
 // 获取题号
 function getProblemId() {
@@ -70,30 +76,249 @@ function switchDomain() {
         if (i < domains.length - 1) span.append(' ');
     });
 
-    // 插入到合适位置
-    const navbarUser = document.querySelector('.nav-link.dropdown-toggle');
-    if (navbarUser) {
-        const parentUl = navbarUser.closest('ul.navbar-nav, ul.nav');
-        if (parentUl && !parentUl.querySelector('#domain-switcher')) {
-            const li = document.createElement('li');
-            li.className = 'nav-item d-flex align-items-center';
-            li.appendChild(span);
-            parentUl.insertBefore(li, navbarUser.closest('li.nav-item'));
-        }
-        return;
-    }
-
+    // 优先尝试插入到顶部的 float-right nav（登录区域）
     const navPills = document.querySelector('.nav.nav-pills.float-right');
     if (navPills && !navPills.querySelector('#domain-switcher')) {
         const li = document.createElement('li');
-        li.className = 'nav-item d-flex align-items-center';
+        li.className = 'nav-item';
         li.appendChild(span);
         navPills.insertBefore(li, navPills.firstChild);
         return;
     }
 
+    // 如果有登录的用户（navbar 中的 dropdown-toggle）
+    const navbarUser = document.querySelector('.navbar .nav-link.dropdown-toggle');
+    if (navbarUser) {
+        const parentUl = navbarUser.closest('ul');
+        if (parentUl && !parentUl.querySelector('#domain-switcher')) {
+            const li = document.createElement('li');
+            li.style.listStyle = 'none';
+            li.appendChild(span);
+
+            const userLi = navbarUser.closest('li');
+            if (userLi && userLi.parentElement) {
+                userLi.parentElement.insertBefore(li, userLi);
+            }
+        }
+        return;
+    }
+
     document.body.insertBefore(span, document.body.firstChild);
-};
+}
+
+// ========== UCUP 评分功能 ==========
+
+function getMultiplier(x) {
+    if (x <= 20) return 1.0;
+    if (x <= 40) return 1.01;
+    if (x <= 60) return 1.03;
+    if (x <= 70) return 1.05;
+    if (x <= 80) return 1.08;
+    if (x <= 90) return 1.12;
+    if (x <= 95) return 1.20;
+    if (x === 96) return 1.30;
+    if (x === 97) return 1.50;
+    if (x === 98) return 1.80;
+    if (x === 99) return 2.50;
+    if (x >= 100) return 3.50;
+    return 1.0;
+}
+
+function getStyle(r) {
+    if (r >= 3000) return '#AA0000';
+    if (r >= 2600) return '#FF3333';
+    if (r >= 2400) return '#FF7777';
+    if (r >= 2100) return '#FFBB55';
+    if (r >= 1900) return '#FF88FF';
+    if (r >= 1600) return '#AAAAFF';
+    if (r >= 1400) return '#03A89E';
+    return '#77FF77';
+}
+
+function isProblemHeader(text) {
+    if (!text) return false;
+    text = text.trim();
+    return /^[A-Z][0-9]?($|[\s\n\(\)])/.test(text);
+}
+
+function getProblemIndices() {
+    // 如果已缓存，返回缓存的值
+    if (window.cachedProblemIndices !== null) {
+        return window.cachedProblemIndices;
+    }
+
+    const table = document.querySelector('table');
+    if (!table) return [];
+
+    let headerRow = table.querySelector('thead tr') || table.rows[0];
+    if (!headerRow) return [];
+
+    const cells = Array.from(headerRow.cells);
+    const problemIndices = [];
+
+    cells.forEach((cell, idx) => {
+        const text = cell.innerText || cell.textContent;
+        if (isProblemHeader(text)) {
+            problemIndices.push(idx);
+        }
+    });
+
+    // 缓存起来
+    if (problemIndices.length > 0) {
+        window.cachedProblemIndices = problemIndices;
+    }
+
+    return problemIndices;
+}
+
+function calculateRatings() {
+    const table = document.querySelector('table');
+    if (!table) return;
+
+    let headerRow = table.querySelector('thead tr') || table.rows[0];
+    if (!headerRow) return;
+
+    if (typeof standings === 'undefined' || !Array.isArray(standings)) return;
+    if (typeof score === 'undefined' || typeof score !== 'object') return;
+
+    // 使用缓存的题目索引
+    const problemIndices = getProblemIndices();
+    if (problemIndices.length === 0) return;
+
+    let validTeams = standings.filter(row => {
+        if (!Array.isArray(row) || row.length < 3) return false;
+        const userInfo = row[2];
+        if (!userInfo || !Array.isArray(userInfo)) return false;
+
+        if (window.onlyUCUPTeams) {
+            const userId = userInfo[0];
+            return userId.startsWith('ucup-team');
+        }
+        return true;
+    });
+
+    const totalParticipants = validTeams.length;
+
+    // 当没有有效队伍时，也需要显示 4000 分
+    if (totalParticipants === 0) {
+        // 没有符合条件的队伍，所有题目都显示 4000
+        problemIndices.forEach((columnIdx) => {
+            const th = headerRow.cells[columnIdx];
+            let badge = th.querySelector('.qoj-precise-rating');
+
+            if (!badge) {
+                badge = document.createElement('div');
+                badge.className = 'qoj-precise-rating';
+                badge.style.cssText = 'display:block; font-size:12px; font-weight:bold; margin-bottom:4px; line-height:1; font-family:monospace;';
+                th.insertBefore(badge, th.firstChild);
+            }
+
+            badge.innerText = 4000;
+            badge.style.color = getStyle(4000);
+            badge.title = `评分: 4000（默认，无有效队伍）`;
+        });
+        return;
+    }
+
+    problemIndices.forEach((columnIdx, scoreIdx) => {
+        let acCount = 0;
+
+        validTeams.forEach(row => {
+            const userInfo = row[2];
+            const userId = userInfo[0];
+
+            if (score[userId] && score[userId][scoreIdx]) {
+                const problemData = score[userId][scoreIdx];
+                if (problemData[0] > 0) {
+                    acCount++;
+                }
+            }
+        });
+
+        // 计算评分
+        let rating;
+        if (acCount === 0) {
+            // 没人过题，评分为 4000
+            rating = 4000;
+        } else {
+            const acPercentage = (acCount / totalParticipants) * 100;
+            const multiplier = getMultiplier(acPercentage);
+            const estimatedTotal = acCount * multiplier;
+
+            if (estimatedTotal <= 1) {
+                rating = 4000;
+            } else {
+                rating = Math.round(RATING_CONFIG.BASE - RATING_CONFIG.K * Math.log10(estimatedTotal));
+                rating = Math.max(800, Math.min(4000, rating));
+            }
+        }
+
+        const th = headerRow.cells[columnIdx];
+        let badge = th.querySelector('.qoj-precise-rating');
+
+        if (!badge) {
+            badge = document.createElement('div');
+            badge.className = 'qoj-precise-rating';
+            badge.style.cssText = 'display:block; font-size:12px; font-weight:bold; margin-bottom:4px; line-height:1; font-family:monospace;';
+            th.insertBefore(badge, th.firstChild);
+        }
+
+        badge.innerText = rating;
+        badge.style.color = getStyle(rating);
+
+        // 当没人过题时，显示更明确的 tooltip
+        if (acCount === 0) {
+            badge.title = `AC 数: 0\n评分: 4000（默认，暂无人通过）\n参赛队: ${totalParticipants}`;
+        } else {
+            const acPercentage = (acCount / totalParticipants) * 100;
+            const multiplier = getMultiplier(acPercentage);
+            const estimatedTotal = acCount * multiplier;
+            badge.title = `AC 数: ${acCount}\nAC 率: ${acPercentage.toFixed(1)}%\n补偿系数: ${multiplier.toFixed(2)}\n预测全场: ${estimatedTotal.toFixed(1)}\n参赛队: ${totalParticipants}`;
+        }
+    });
+}
+
+function addToggleButton() {
+    if (document.getElementById('toggle-ucup-teams')) return;
+
+    const navbarUser = document.querySelector('.nav-link.dropdown-toggle');
+    if (!navbarUser) return;
+
+    const parentUl = navbarUser.closest('ul.navbar-nav, ul.nav');
+    if (!parentUl) return;
+
+    const li = document.createElement('li');
+    li.style.listStyle = 'none';
+    li.style.marginLeft = '10px';
+
+    const button = document.createElement('button');
+    button.id = 'toggle-ucup-teams';
+    button.type = 'button';
+    button.textContent = 'Only UCUP Teams';
+    button.style.cssText = 'padding: 5px 10px; background-color: #28a745; color: white; border: none; border-radius: 3px; cursor: pointer; font-size: 0.9em;';
+
+    button.onmouseover = () => (button.style.backgroundColor = '#218838');
+    button.onmouseout = () => (button.style.backgroundColor = '#28a745');
+
+    button.onclick = function (e) {
+        e.preventDefault();
+        e.stopPropagation();
+        window.onlyUCUPTeams = !window.onlyUCUPTeams;
+        button.textContent = window.onlyUCUPTeams ? 'Show All Teams' : 'Only UCUP Teams';
+        calculateRatings();
+        return false;
+    };
+
+    li.appendChild(button);
+    parentUl.insertBefore(li, navbarUser.parentElement);
+}
+
+function isStandingsPage() {
+    return /\/contest\/\d+\/(standings|standings\/external)/.test(location.pathname);
+}
+
+// ========== 其他功能 ==========
+
 function backProblem() {
     if (document.querySelector('.nav-link.back-problem')) return;
     const nav = document.querySelector("ul.nav.nav-tabs");
@@ -110,7 +335,8 @@ function backProblem() {
     const backToContest = Array.from(nav.querySelectorAll("a")).find(a => a.textContent.includes("Back to the contest"));
     if (backToContest) backToContest.parentElement.before(li);
     else nav.appendChild(li);
-};
+}
+
 function viewSubmissions() {
     if (document.querySelector('.nav-link.view-submissions')) return;
     const nav = document.querySelector('ul.nav.nav-tabs[role="tablist"]');
@@ -129,7 +355,8 @@ function viewSubmissions() {
     li.className = 'nav-item';
     li.innerHTML = `<a class="nav-link view-submissions" href="/submissions?problem_id=${pid}&submitter=${username}" role="tab">View submissions</a>`;
     nav.appendChild(li);
-};
+}
+
 function viewInContestLinks() {
     const alertBox = document.querySelector('.alert.alert-primary');
     if (!alertBox) return;
@@ -154,7 +381,8 @@ function viewInContestLinks() {
         viewLink.dataset.added = 'true';
         a.insertAdjacentElement('afterend', viewLink);
     });
-};
+}
+
 function addAcTag() {
     if (window.__qoj_fullscore_lock) return;
     window.__qoj_fullscore_lock = true;
@@ -226,6 +454,15 @@ function addAcTag() {
     // --- 定义主函数 ---
     function main() {
         switchDomain();
+
+        // standings 页面特有功能
+        if (isStandingsPage()) {
+            addToggleButton();
+            // 延迟执行，等待表格渲染完成
+            setTimeout(calculateRatings, 500);
+        }
+
+        // 其他功能
         backProblem();
         viewSubmissions();
         viewInContestLinks();
@@ -248,6 +485,12 @@ function addAcTag() {
             observer.disconnect(); // 先断开，防止重复触发
             setTimeout(() => {
                 main(); // 稍延迟再执行，确保元素已稳定渲染
+
+                // standings 页面需要额外延迟等待表格渲染
+                if (isStandingsPage()) {
+                    setTimeout(calculateRatings, 500);
+                }
+
                 observer.observe(document.body, { childList: true, subtree: true }); // 重新监听
             }, 100);
         }
