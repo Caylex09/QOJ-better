@@ -10,7 +10,6 @@
 // @match        https://oj.qiuly.org/*
 // @match        https://relia.uk/*
 // @match        https://larunatre.cy/*
-// @match        https://relia.uk/*
 // @grant        none
 // @license      MIT
 // @author       cyx
