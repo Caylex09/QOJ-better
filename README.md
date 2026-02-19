@@ -1,4 +1,4 @@
-代码由 ChatGPT 生成。
+代码由 ChatGPT 和 Github Copilot 生成。
 
 实现功能：
 
