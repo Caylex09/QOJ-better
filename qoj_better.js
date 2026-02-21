@@ -278,6 +278,112 @@ function calculateRatings() {
     });
 }
 
+const GP30_SCORES = [100, 75, 60, 50, 45, 40, 36, 32, 29, 26, 24, 22, 20, 18, 16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1];
+
+function getGP30(rank) {
+    if (rank >= 1 && rank <= 30) return GP30_SCORES[rank - 1];
+    return 0;
+}
+
+function getPerfColor(perf) {
+    if (perf >= 270) return '#AA0000';
+    if (perf >= 240) return '#FF3333';
+    if (perf >= 210) return '#FF7777';
+    if (perf >= 175) return '#FFBB55';
+    if (perf >= 145) return '#FF88FF';
+    if (perf >= 110) return '#AAAAFF';
+    if (perf >= 70)  return '#03A89E';
+    return '#77FF77';
+}
+
+function calculatePerformance() {
+    const table = document.querySelector('table');
+    if (!table) return;
+
+    let headerRow = table.querySelector('thead tr') || table.rows[0];
+    if (!headerRow) return;
+
+    if (typeof standings === 'undefined' || !Array.isArray(standings)) return;
+    if (typeof score === 'undefined' || typeof score !== 'object') return;
+
+    const problemIndices = getProblemIndices();
+    if (problemIndices.length === 0) return;
+
+    // 移除已有的 Perf 列（支持重复调用）
+    if (headerRow.querySelector('.qoj-perf-header')) {
+        headerRow.querySelector('.qoj-perf-header').remove();
+        table.querySelectorAll('.qoj-perf-cell').forEach(td => td.remove());
+    }
+
+    const filteredStandings = standings.filter(row => {
+        if (!Array.isArray(row) || row.length < 3) return false;
+        const userInfo = row[2];
+        if (!userInfo || !Array.isArray(userInfo)) return false;
+        return userInfo[0].startsWith('ucup-team');
+    });
+
+    // n_teams：在过滤后的队伍中，过了至少一题的队伍数
+    function solvedAtLeastOne(row) {
+        const userId = row[2][0];
+        for (let i = 0; i < problemIndices.length; i++) {
+            if (score[userId]?.[i]?.[0] > 0) return true;
+        }
+        return false;
+    }
+
+    const teamsWithSolves = filteredStandings.filter(solvedAtLeastOne);
+    const nTeams = teamsWithSolves.length;
+
+    // 构建 userId -> performance 映射（standings 已按名次排序）
+    const perfMap = {};
+    teamsWithSolves.forEach((row, idx) => {
+        const userId = row[2][0];
+        const rank = idx + 1;
+        const gp30 = getGP30(rank);
+        const perf = nTeams > 0 ? 200 * (nTeams - rank + 1) / nTeams + gp30 : gp30;
+        perfMap[userId] = perf;
+    });
+
+    // 添加表头
+    const perfTh = document.createElement('th');
+    perfTh.className = 'qoj-perf-header';
+    perfTh.textContent = 'Perf';
+    perfTh.style.cssText = 'font-size:12px; white-space:nowrap; text-align:center;';
+    perfTh.title = `Performance = 200 × (n_teams − rank + 1) / n_teams + GP30\nn_teams: 至少过一题的队伍数`;
+    headerRow.appendChild(perfTh);
+    
+    // 为 tbody 每一行添加单元格
+    // standings 与 tbody 行一一对应
+    const tbodyRows = table.querySelectorAll('tbody tr');
+    standings.forEach((row, idx) => {
+        if (!Array.isArray(row) || row.length < 3) return;
+        const userInfo = row[2];
+        if (!userInfo || !Array.isArray(userInfo)) return;
+        const userId = userInfo[0];
+
+        const tr = tbodyRows[idx - 100 * (getPageId() - 1)]; // 根据当前页码调整索引
+        if (!tr) return;
+
+        const td = document.createElement('td');
+        td.className = 'qoj-perf-cell';
+        td.style.cssText = 'text-align:center; font-weight:bold; font-family:monospace;';
+
+        if (perfMap[userId] !== undefined) {
+            const perf = perfMap[userId];
+            td.textContent = perf % 1 === 0 ? perf.toFixed(0) : perf.toFixed(1);
+            td.style.color = getPerfColor(perf);
+            const rank = teamsWithSolves.indexOf(row) + 1;
+            const gp30 = getGP30(rank);
+            td.title = `Rank: ${rank}\nGP30: ${gp30}\nn_teams: ${nTeams}\nPerf: ${perf.toFixed(2)}`;
+        } else {
+            td.textContent = '—';
+            td.style.color = '#999';
+            td.title = '未过题，不计入 Performance';
+        }
+        tr.appendChild(td);
+    });
+}
+
 function addToggleButton() {
     if (document.getElementById('toggle-ucup-teams')) return;
 
@@ -306,6 +412,7 @@ function addToggleButton() {
         window.onlyUCUPTeams = !window.onlyUCUPTeams;
         button.textContent = window.onlyUCUPTeams ? 'Show All Teams' : 'Only UCUP Teams';
         calculateRatings();
+        calculatePerformance();
         return false;
     };
 
@@ -315,6 +422,15 @@ function addToggleButton() {
 
 function isStandingsPage() {
     return /\/contest\/\d+\/(standings|standings\/external)/.test(location.pathname);
+}
+
+function getPageId() {
+    const pagination = document.querySelector('ul.pagination');
+    if (!pagination) return null;
+    const active = pagination.querySelector('li.page-item.active a.page-link');
+    if (!active) return null;
+    const match = active.textContent.trim().match(/^(\d+)$/);
+    return match[1] || '1';
 }
 
 // ========== 其他功能 ==========
@@ -489,6 +605,7 @@ function addAcTag() {
                 // standings 页面需要额外延迟等待表格渲染
                 if (isStandingsPage()) {
                     setTimeout(calculateRatings, 500);
+                    setTimeout(calculatePerformance, 500);
                 }
 
                 observer.observe(document.body, { childList: true, subtree: true }); // 重新监听
