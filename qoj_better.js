@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         QOJ Better
 // @namespace    http://tampermonkey.net/
-// @version      1.7
+// @version      1.8
 // @description  Make QOJ great again!
 // @match        https://qoj.ac/*
 // @match        https://jiang.ly/*
@@ -292,7 +292,7 @@ function getPerfColor(perf) {
     if (perf >= 175) return '#FFBB55';
     if (perf >= 145) return '#FF88FF';
     if (perf >= 110) return '#AAAAFF';
-    if (perf >= 70)  return '#03A89E';
+    if (perf >= 70) return '#03A89E';
     return '#77FF77';
 }
 
@@ -351,7 +351,7 @@ function calculatePerformance() {
     perfTh.style.cssText = 'font-size:12px; white-space:nowrap; text-align:center;';
     perfTh.title = `Performance = 200 × (n_teams − rank + 1) / n_teams + GP30\nn_teams: 至少过一题的队伍数`;
     headerRow.appendChild(perfTh);
-    
+
     // 为 tbody 每一行添加单元格
     // standings 与 tbody 行一一对应
     const tbodyRows = table.querySelectorAll('tbody tr');
