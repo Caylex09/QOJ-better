@@ -9,7 +9,7 @@
 // @match        https://contest.ucup.ac/*
 // @match        https://oj.qiuly.org/*
 // @match        https://relia.uk/*
-// @match        https://larunatre.cy/*
+// @match        https://love.larunatre.cy/*
 // @grant        none
 // @license      MIT
 // @author       cyx
@@ -50,8 +50,8 @@ function switchDomain() {
         pathname.includes('/user') ||
         pathname.includes('/results');
     const domains = isContest
-        ? ['qoj.ac', 'jiang.ly', 'huang.lt', 'oj.qiuly.org', 'relia.uk', 'larunatre.cy', 'contest.ucup.ac']
-        : ['qoj.ac', 'jiang.ly', 'huang.lt', 'oj.qiuly.org', 'relia.uk', 'larunatre.cy'];
+        ? ['qoj.ac', 'jiang.ly', 'huang.lt', 'oj.qiuly.org', 'relia.uk', 'love.larunatre.cy', 'contest.ucup.ac']
+        : ['qoj.ac', 'jiang.ly', 'huang.lt', 'oj.qiuly.org', 'relia.uk', 'love.larunatre.cy'];
 
     // 构造域名切换内容
     const span = document.createElement('span');
