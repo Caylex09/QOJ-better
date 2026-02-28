@@ -426,9 +426,9 @@ function isStandingsPage() {
 
 function getPageId() {
     const pagination = document.querySelector('ul.pagination');
-    if (!pagination) return null;
+    if (!pagination) return 1;
     const active = pagination.querySelector('li.page-item.active a.page-link');
-    if (!active) return null;
+    if (!active) return 1;
     const match = active.textContent.trim().match(/^(\d+)$/);
     return match[1] || '1';
 }
