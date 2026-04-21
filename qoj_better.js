@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         QOJ Better
 // @namespace    http://tampermonkey.net/
-// @version      1.10
+// @version      1.11
 // @description  Make QOJ great again!
 // @match        https://qoj.ac/*
 // @match        https://jiang.ly/*
@@ -10,6 +10,7 @@
 // @match        https://oj.qiuly.org/*
 // @match        https://relia.uk/*
 // @match        https://love.larunatre.cy/*
+// @match        https://hate.larunatre.cy/*
 // @grant        none
 // @license      MIT
 // @author       cyx
@@ -20,6 +21,42 @@ window.onlyUCUPTeams = false;
 window.cachedProblemIndices = null;
 
 const RATING_CONFIG = { BASE: 4100, K: 950 };
+
+const DOMAIN_OPTIONS = [
+    { host: 'qoj.ac', contestOnly: false },
+    { host: 'jiang.ly', contestOnly: false },
+    { host: 'huang.lt', contestOnly: false },
+    { host: 'oj.qiuly.org', contestOnly: false },
+    { host: 'relia.uk', contestOnly: false },
+    { host: 'love.larunatre.cy', contestOnly: false },
+    { host: 'hate.larunatre.cy', contestOnly: false },
+    { host: 'contest.ucup.ac', contestOnly: true },
+];
+
+function isContestContext(pathname) {
+    return (
+        pathname.includes('/contest/') ||
+        pathname.includes('/contests') ||
+        pathname.includes('/user') ||
+        pathname.includes('/results')
+    );
+}
+
+function getDefaultGeneralVisibility() {
+    const visibility = {};
+    DOMAIN_OPTIONS.forEach(option => {
+        visibility[option.host] = !option.contestOnly;
+    });
+    return visibility;
+}
+
+function getDefaultContestVisibility() {
+    const visibility = {};
+    DOMAIN_OPTIONS.forEach(option => {
+        visibility[option.host] = option.contestOnly;
+    });
+    return visibility;
+}
 
 // 获取题号
 function getProblemId() {
@@ -44,14 +81,20 @@ function switchDomain() {
     if (document.getElementById('domain-switcher')) return;
     const currentHost = location.host;
     const pathname = location.pathname + location.search + location.hash;
-    const isContest =
-        pathname.includes('/contest/') ||
-        pathname.includes('/contests') ||
-        pathname.includes('/user') ||
-        pathname.includes('/results');
-    const domains = isContest
-        ? ['qoj.ac', 'jiang.ly', 'huang.lt', 'oj.qiuly.org', 'relia.uk', 'love.larunatre.cy', 'contest.ucup.ac']
-        : ['qoj.ac', 'jiang.ly', 'huang.lt', 'oj.qiuly.org', 'relia.uk', 'love.larunatre.cy'];
+    const isContest = isContestContext(pathname);
+    const candidateDomains = DOMAIN_OPTIONS.map(option => option.host);
+    const generalVisibility = settings.domainVisibility && settings.domainVisibility.general
+        ? settings.domainVisibility.general
+        : getDefaultGeneralVisibility();
+    const contestVisibility = settings.domainVisibility && settings.domainVisibility.contestOnly
+        ? settings.domainVisibility.contestOnly
+        : getDefaultContestVisibility();
+    const domains = candidateDomains.filter(domain => {
+        if (generalVisibility[domain]) return true;
+        if (isContest && contestVisibility[domain]) return true;
+        return false;
+    });
+    if (domains.length === 0) return;
 
     // 构造域名切换内容
     const span = document.createElement('span');
@@ -113,6 +156,7 @@ const DEFAULT_SETTINGS = {
     showPerformance: true,
     onlyUcupTeams: false,
     showDomainSwitcher: true,
+    domainVisibility: null,
     addBackButton: true,
     addViewSubmissions: true,
     addViewInContest: true,
@@ -126,6 +170,18 @@ function loadSettings() {
     try {
         const storedSettings = JSON.parse(localStorage.getItem('qojBetterSettings'));
         settings = { ...DEFAULT_SETTINGS, ...storedSettings };
+        if (settings.domainVisibility) {
+            settings.domainVisibility = {
+                general: {
+                    ...getDefaultGeneralVisibility(),
+                    ...(settings.domainVisibility.general || {}),
+                },
+                contestOnly: {
+                    ...getDefaultContestVisibility(),
+                    ...(settings.domainVisibility.contestOnly || {}),
+                },
+            };
+        }
     } catch {
         settings = { ...DEFAULT_SETTINGS };
     }
@@ -148,6 +204,12 @@ function createSettingsModal() {
                 <div>
                     <p><strong>General</strong></p>
                     <label><input type="checkbox" id="setting-showDomainSwitcher"> Show mirror switcher</label><br>
+                    <div id="qoj-domain-settings" style="margin: 10px 0 0 20px;">
+                        <div style="font-size: 0.85em; color: #888; margin: 6px 0 4px;">General</div>
+                        <div id="qoj-domain-list-general"></div>
+                        <div style="font-size: 0.85em; color: #888; margin: 8px 0 4px;">Contest only</div>
+                        <div id="qoj-domain-list-contest"></div>
+                    </div>
                     <hr>
                     <p><strong>Problems</strong></p>
                     <label><input type="checkbox" id="setting-addViewSubmissions"> Add view-my-submissions link</label><br>
@@ -166,6 +228,7 @@ function createSettingsModal() {
                     <label><input type="checkbox" id="setting-addVoteViewer"> Add authored problems vote viewer</label><br>
                 </div>
                 <div style="text-align:right; margin-top:20px;">
+                    <button id="qoj-settings-cancel" style="padding: 8px 15px; background-color: #6c757d; color: white; border: none; border-radius: 3px; cursor: pointer; margin-right: 8px;">Cancel</button>
                     <button id="qoj-settings-save" style="padding: 8px 15px; background-color: #007bff; color: white; border: none; border-radius: 3px; cursor: pointer;">Save</button>
                 </div>
             </div>
@@ -173,15 +236,54 @@ function createSettingsModal() {
     `;
     document.body.insertAdjacentHTML('beforeend', modalHtml);
 
+    const renderDomainCheckboxes = () => {
+        const generalContainer = document.getElementById('qoj-domain-list-general');
+        const contestContainer = document.getElementById('qoj-domain-list-contest');
+        if (!generalContainer || !contestContainer) return;
+        generalContainer.innerHTML = '';
+        contestContainer.innerHTML = '';
+        DOMAIN_OPTIONS.forEach(option => {
+            const label = document.createElement('label');
+            const checkbox = document.createElement('input');
+            checkbox.type = 'checkbox';
+            checkbox.dataset.domain = option.host;
+            checkbox.id = `setting-domain-general-${option.host.replace(/\./g, '-')}`;
+            label.appendChild(checkbox);
+            label.append(` ${option.host}`);
+            generalContainer.appendChild(label);
+            generalContainer.appendChild(document.createElement('br'));
+            const contestLabel = document.createElement('label');
+            const contestCheckbox = document.createElement('input');
+            contestCheckbox.type = 'checkbox';
+            contestCheckbox.dataset.domain = option.host;
+            contestCheckbox.id = `setting-domain-contest-${option.host.replace(/\./g, '-')}`;
+            contestLabel.appendChild(contestCheckbox);
+            contestLabel.append(` ${option.host}`);
+            contestContainer.appendChild(contestLabel);
+            contestContainer.appendChild(document.createElement('br'));
+        });
+    };
+
     // --- Bind events ---
     const updateDependencies = () => {
         document.querySelectorAll('#qoj-settings-modal input[data-depends-on]').forEach(child => {
             const parent = document.getElementById(child.getAttribute('data-depends-on'));
             if (parent) child.disabled = !parent.checked;
         });
+        const switcherToggle = document.getElementById('setting-showDomainSwitcher');
+        const domainInputs = document.querySelectorAll('#qoj-domain-settings input[type="checkbox"]');
+        if (switcherToggle) {
+            domainInputs.forEach(cb => {
+                cb.disabled = !switcherToggle.checked;
+            });
+        }
     };
 
     document.getElementById('qoj-settings-close').onclick = () => {
+        document.getElementById('qoj-settings-modal').style.display = 'none';
+    };
+
+    document.getElementById('qoj-settings-cancel').onclick = () => {
         document.getElementById('qoj-settings-modal').style.display = 'none';
     };
 
@@ -194,6 +296,17 @@ function createSettingsModal() {
         settings.showPerformance = document.getElementById('setting-showPerformance').checked;
         settings.onlyUcupTeams = document.getElementById('setting-onlyUcupTeams').checked;
         settings.showDomainSwitcher = document.getElementById('setting-showDomainSwitcher').checked;
+        const domainVisibility = {
+            general: {},
+            contestOnly: {},
+        };
+        document.querySelectorAll('#qoj-domain-list-general input[type="checkbox"]').forEach(cb => {
+            domainVisibility.general[cb.dataset.domain] = cb.checked;
+        });
+        document.querySelectorAll('#qoj-domain-list-contest input[type="checkbox"]').forEach(cb => {
+            domainVisibility.contestOnly[cb.dataset.domain] = cb.checked;
+        });
+        settings.domainVisibility = domainVisibility;
         settings.addBackButton = document.getElementById('setting-addBackButton').checked;
         settings.addViewSubmissions = document.getElementById('setting-addViewSubmissions').checked;
         settings.addViewInContest = document.getElementById('setting-addViewInContest').checked;
@@ -217,6 +330,24 @@ function createSettingsModal() {
             document.getElementById('setting-showPerformance').checked = settings.showPerformance;
             document.getElementById('setting-onlyUcupTeams').checked = settings.onlyUcupTeams;
             document.getElementById('setting-showDomainSwitcher').checked = settings.showDomainSwitcher;
+            const defaultGeneral = getDefaultGeneralVisibility();
+            const defaultContest = getDefaultContestVisibility();
+            document.querySelectorAll('#qoj-domain-list-general input[type="checkbox"]').forEach(cb => {
+                const domain = cb.dataset.domain;
+                if (settings.domainVisibility && settings.domainVisibility.general) {
+                    cb.checked = settings.domainVisibility.general[domain] !== false;
+                } else {
+                    cb.checked = defaultGeneral[domain] !== false;
+                }
+            });
+            document.querySelectorAll('#qoj-domain-list-contest input[type="checkbox"]').forEach(cb => {
+                const domain = cb.dataset.domain;
+                if (settings.domainVisibility && settings.domainVisibility.contestOnly) {
+                    cb.checked = settings.domainVisibility.contestOnly[domain] !== false;
+                } else {
+                    cb.checked = defaultContest[domain] !== false;
+                }
+            });
             document.getElementById('setting-addBackButton').checked = settings.addBackButton;
             document.getElementById('setting-addViewSubmissions').checked = settings.addViewSubmissions;
             document.getElementById('setting-addViewInContest').checked = settings.addViewInContest;
@@ -227,6 +358,8 @@ function createSettingsModal() {
         }
     });
     observer.observe(modal, { attributes: true, attributeFilter: ['style'] });
+
+    renderDomainCheckboxes();
 }
 
 function addSettingsButton() {
