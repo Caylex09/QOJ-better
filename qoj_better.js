@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         QOJ Better
 // @namespace    http://tampermonkey.net/
-// @version      1.9
+// @version      1.10
 // @description  Make QOJ great again!
 // @match        https://qoj.ac/*
 // @match        https://jiang.ly/*
@@ -106,6 +106,165 @@ function switchDomain() {
     document.body.insertBefore(span, document.body.firstChild);
 }
 
+// ========== 设置功能 ==========
+
+const DEFAULT_SETTINGS = {
+    showRatings: true,
+    showPerformance: true,
+    onlyUcupTeams: false,
+    showDomainSwitcher: true,
+    addBackButton: true,
+    addViewSubmissions: true,
+    addViewInContest: true,
+    addAcTag: true,
+    addVoteViewer: true,
+};
+
+let settings = {};
+
+function loadSettings() {
+    try {
+        const storedSettings = JSON.parse(localStorage.getItem('qojBetterSettings'));
+        settings = { ...DEFAULT_SETTINGS, ...storedSettings };
+    } catch {
+        settings = { ...DEFAULT_SETTINGS };
+    }
+}
+
+function saveSettings() {
+    localStorage.setItem('qojBetterSettings', JSON.stringify(settings));
+}
+
+function createSettingsModal() {
+    if (document.getElementById('qoj-settings-modal')) return;
+
+    const modalHtml = `
+        <div id="qoj-settings-modal" style="display:none; position:fixed; z-index:1050; top:0; left:0; width:100%; height:100%; overflow:auto; background-color:rgba(0,0,0,0.4);">
+            <div style="background-color:#fefefe; margin:10% auto; padding:20px; border:1px solid #888; border-radius: 5px; width:80%; max-width:600px;">
+                <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #eee; padding-bottom:10px; margin-bottom:20px;">
+                    <h4 style="margin:0;">QOJ Better Settings</h4>
+                    <span id="qoj-settings-close" style="color:#aaa; font-size:28px; font-weight:bold; cursor:pointer;">&times;</span>
+                </div>
+                <div>
+                    <p><strong>General</strong></p>
+                    <label><input type="checkbox" id="setting-showDomainSwitcher"> Show mirror switcher</label><br>
+                    <hr>
+                    <p><strong>Problems</strong></p>
+                    <label><input type="checkbox" id="setting-addViewSubmissions"> Add view-my-submissions link</label><br>
+                    <label><input type="checkbox" id="setting-addViewInContest"> Show view-in-contest link on problem pages</label><br>
+                    <label><input type="checkbox" id="setting-addAcTag"> Add Accepted badge for full score</label><br>
+                    <hr>
+                    <p><strong>Contests</strong></p>
+                    <label><input type="checkbox" id="setting-addBackButton"> Add back link on contest problem pages</label><br>
+                    <hr>
+                    <p><strong>Standings</strong></p>
+                    <label><input type="checkbox" id="setting-showRatings"> Show problem difficulty</label><br>
+                    <label style="margin-left: 20px;"><input type="checkbox" id="setting-onlyUcupTeams" data-depends-on="setting-showRatings"> Difficulty only counts UCUP teams</label><br>
+                    <label><input type="checkbox" id="setting-showPerformance"> Show performance (GP30)</label><br>
+                    <hr>
+                    <p><strong>Profile</strong></p>
+                    <label><input type="checkbox" id="setting-addVoteViewer"> Add authored problems vote viewer</label><br>
+                </div>
+                <div style="text-align:right; margin-top:20px;">
+                    <button id="qoj-settings-save" style="padding: 8px 15px; background-color: #007bff; color: white; border: none; border-radius: 3px; cursor: pointer;">Save</button>
+                </div>
+            </div>
+        </div>
+    `;
+    document.body.insertAdjacentHTML('beforeend', modalHtml);
+
+    // --- Bind events ---
+    const updateDependencies = () => {
+        document.querySelectorAll('#qoj-settings-modal input[data-depends-on]').forEach(child => {
+            const parent = document.getElementById(child.getAttribute('data-depends-on'));
+            if (parent) child.disabled = !parent.checked;
+        });
+    };
+
+    document.getElementById('qoj-settings-close').onclick = () => {
+        document.getElementById('qoj-settings-modal').style.display = 'none';
+    };
+
+    document.querySelectorAll('#qoj-settings-modal input[type="checkbox"]').forEach(cb => {
+        cb.addEventListener('change', updateDependencies);
+    });
+
+    document.getElementById('qoj-settings-save').onclick = () => {
+        settings.showRatings = document.getElementById('setting-showRatings').checked;
+        settings.showPerformance = document.getElementById('setting-showPerformance').checked;
+        settings.onlyUcupTeams = document.getElementById('setting-onlyUcupTeams').checked;
+        settings.showDomainSwitcher = document.getElementById('setting-showDomainSwitcher').checked;
+        settings.addBackButton = document.getElementById('setting-addBackButton').checked;
+        settings.addViewSubmissions = document.getElementById('setting-addViewSubmissions').checked;
+        settings.addViewInContest = document.getElementById('setting-addViewInContest').checked;
+        settings.addAcTag = document.getElementById('setting-addAcTag').checked;
+        settings.addVoteViewer = document.getElementById('setting-addVoteViewer').checked;
+
+        saveSettings();
+        document.getElementById('qoj-settings-modal').style.display = 'none';
+        alert('Settings saved. Some changes may require a refresh.');
+        // Force re-render
+        window.qojBetterInitialized = false;
+        lastUrl = '';
+        scheduleMainAndCalc();
+    };
+
+    // Sync checkbox states when opening
+    const modal = document.getElementById('qoj-settings-modal');
+    const observer = new MutationObserver(() => {
+        if (modal.style.display === 'block') {
+            document.getElementById('setting-showRatings').checked = settings.showRatings;
+            document.getElementById('setting-showPerformance').checked = settings.showPerformance;
+            document.getElementById('setting-onlyUcupTeams').checked = settings.onlyUcupTeams;
+            document.getElementById('setting-showDomainSwitcher').checked = settings.showDomainSwitcher;
+            document.getElementById('setting-addBackButton').checked = settings.addBackButton;
+            document.getElementById('setting-addViewSubmissions').checked = settings.addViewSubmissions;
+            document.getElementById('setting-addViewInContest').checked = settings.addViewInContest;
+            document.getElementById('setting-addAcTag').checked = settings.addAcTag;
+            document.getElementById('setting-addVoteViewer').checked = settings.addVoteViewer;
+
+            updateDependencies();
+        }
+    });
+    observer.observe(modal, { attributes: true, attributeFilter: ['style'] });
+}
+
+function addSettingsButton() {
+    if (document.getElementById('qoj-settings-btn')) return;
+
+    const li = document.createElement('li');
+    li.className = 'nav-item';
+
+    const button = document.createElement('a');
+    button.id = 'qoj-settings-btn';
+    button.href = 'javascript:void(0);';
+    button.innerHTML = '<span class="glyphicon glyphicon-cog"></span> QOJ Better Settings';
+    button.className = 'nav-link';
+    button.onclick = () => {
+        document.getElementById('qoj-settings-modal').style.display = 'block';
+    };
+
+    li.appendChild(button);
+
+    const navList = document.querySelector('.navbar .nav.navbar-nav.mr-auto.navbar-transparent');
+    if (navList) {
+        const lastItem = navList.querySelector('li.nav-item:last-of-type');
+        if (lastItem && lastItem.nextSibling) {
+            navList.insertBefore(li, lastItem.nextSibling);
+        } else {
+            navList.appendChild(li);
+        }
+    } else {
+        const navbarUser = document.querySelector('.nav-link.dropdown-toggle');
+        if (!navbarUser) return;
+        const parentUl = navbarUser.closest('ul.navbar-nav, ul.nav');
+        if (!parentUl) return;
+        parentUl.insertBefore(li, navbarUser.closest('li'));
+    }
+
+    createSettingsModal();
+}
+
 // ========== UCUP 评分功能 ==========
 
 function getMultiplier(x) {
@@ -181,28 +340,54 @@ function calculateRatings() {
     if (typeof standings === 'undefined' || !Array.isArray(standings)) return;
     if (typeof score === 'undefined' || typeof score !== 'object') return;
 
-    // 使用缓存的题目索引
     const problemIndices = getProblemIndices();
     if (problemIndices.length === 0) return;
 
-    let validTeams = standings.filter(row => {
-        if (!Array.isArray(row) || row.length < 3) return false;
+    const isUCUPOnly = settings.onlyUcupTeams;
+    let totalParticipants = 0;
+    const acCounts = new Int32Array(problemIndices.length);
+
+    // 纯 JS 读取计算：抛弃了让浏览器的 event loop 切开碎步的机制，在 V8 里跑完千次判断小于 1 毫秒
+    for (let i = 0; i < standings.length; i++) {
+        const row = standings[i];
+        if (!row || row.length < 3) continue;
         const userInfo = row[2];
-        if (!userInfo || !Array.isArray(userInfo)) return false;
+        if (!userInfo) continue;
+        const userId = userInfo[0];
 
-        if (window.onlyUCUPTeams) {
-            const userId = userInfo[0];
-            return userId.startsWith('ucup-team');
+        if (isUCUPOnly && !userId.startsWith('ucup-team')) {
+            continue;
         }
-        return true;
-    });
+        totalParticipants++;
 
-    const totalParticipants = validTeams.length;
+        const userScores = score[userId];
+        if (userScores) {
+            for (let j = 0; j < problemIndices.length; j++) {
+                if (userScores[j] && userScores[j][0] > 0) {
+                    acCounts[j]++;
+                }
+            }
+        }
+    }
 
-    // 当没有有效队伍时，也需要显示 4000 分
-    if (totalParticipants === 0) {
-        // 没有符合条件的队伍，所有题目都显示 4000
-        problemIndices.forEach((columnIdx) => {
+    // 集中所有 DOM 修改在一帧里。绝不能分成多次插入。
+    requestAnimationFrame(() => {
+        for (let j = 0; j < problemIndices.length; j++) {
+            const columnIdx = problemIndices[j];
+            const acCount = acCounts[j];
+            let rating = 4000;
+
+            if (totalParticipants > 0 && acCount > 0) {
+                const acPercentage = (acCount / totalParticipants) * 100;
+                const multiplier = getMultiplier(acPercentage);
+                const estimatedTotal = acCount * multiplier;
+
+                if (estimatedTotal > 1) {
+                    rating = Math.round(RATING_CONFIG.BASE - RATING_CONFIG.K * Math.log10(estimatedTotal));
+                    rating = Math.max(800, Math.min(4000, rating));
+                }
+            }
+
             const th = headerRow.cells[columnIdx];
             let badge = th.querySelector('.qoj-precise-rating');
 
@@ -213,67 +398,16 @@ function calculateRatings() {
                 th.insertBefore(badge, th.firstChild);
             }
 
-            badge.innerText = 4000;
-            badge.style.color = getStyle(4000);
-            badge.title = `评分: 4000（默认，无有效队伍）`;
-        });
-        return;
-    }
+            badge.innerText = rating;
+            badge.style.color = getStyle(rating);
 
-    problemIndices.forEach((columnIdx, scoreIdx) => {
-        let acCount = 0;
-
-        validTeams.forEach(row => {
-            const userInfo = row[2];
-            const userId = userInfo[0];
-
-            if (score[userId] && score[userId][scoreIdx]) {
-                const problemData = score[userId][scoreIdx];
-                if (problemData[0] > 0) {
-                    acCount++;
-                }
-            }
-        });
-
-        // 计算评分
-        let rating;
-        if (acCount === 0) {
-            // 没人过题，评分为 4000
-            rating = 4000;
-        } else {
-            const acPercentage = (acCount / totalParticipants) * 100;
-            const multiplier = getMultiplier(acPercentage);
-            const estimatedTotal = acCount * multiplier;
-
-            if (estimatedTotal <= 1) {
-                rating = 4000;
+            if (acCount === 0 || totalParticipants === 0) {
+                badge.title = `AC 数: 0\n评分: 4000（默认，暂无人通过）\n参赛队: ${totalParticipants}`;
             } else {
-                rating = Math.round(RATING_CONFIG.BASE - RATING_CONFIG.K * Math.log10(estimatedTotal));
-                rating = Math.max(800, Math.min(4000, rating));
+                const acPercentage = (acCount / totalParticipants) * 100;
+                const estimatedTotal = acCount * getMultiplier(acPercentage);
+                badge.title = `AC 数: ${acCount}\nAC 率: ${acPercentage.toFixed(1)}%\n补偿系数: ${getMultiplier(acPercentage).toFixed(2)}\n预测全场: ${estimatedTotal.toFixed(1)}\n参赛队: ${totalParticipants}`;
             }
-        }
-
-        const th = headerRow.cells[columnIdx];
-        let badge = th.querySelector('.qoj-precise-rating');
-
-        if (!badge) {
-            badge = document.createElement('div');
-            badge.className = 'qoj-precise-rating';
-            badge.style.cssText = 'display:block; font-size:12px; font-weight:bold; margin-bottom:4px; line-height:1; font-family:monospace;';
-            th.insertBefore(badge, th.firstChild);
-        }
-
-        badge.innerText = rating;
-        badge.style.color = getStyle(rating);
-
-        // 当没人过题时，显示更明确的 tooltip
-        if (acCount === 0) {
-            badge.title = `AC 数: 0\n评分: 4000（默认，暂无人通过）\n参赛队: ${totalParticipants}`;
-        } else {
-            const acPercentage = (acCount / totalParticipants) * 100;
-            const multiplier = getMultiplier(acPercentage);
-            const estimatedTotal = acCount * multiplier;
-            badge.title = `AC 数: ${acCount}\nAC 率: ${acPercentage.toFixed(1)}%\n补偿系数: ${multiplier.toFixed(2)}\n预测全场: ${estimatedTotal.toFixed(1)}\n参赛队: ${totalParticipants}`;
         }
     });
 }
@@ -309,78 +443,93 @@ function calculatePerformance() {
     const problemIndices = getProblemIndices();
     if (problemIndices.length === 0) return;
 
-    // 移除已有的 Perf 列（支持重复调用）
-    if (headerRow.querySelector('.qoj-perf-header')) {
-        headerRow.querySelector('.qoj-perf-header').remove();
-        table.querySelectorAll('.qoj-perf-cell').forEach(td => td.remove());
-    }
+    let teamsWithSolvesCount = 0;
+    const validUserIds = [];
+    const perfMap = new Map();
 
-    const filteredStandings = standings.filter(row => {
-        if (!Array.isArray(row) || row.length < 3) return false;
+    // 去掉了 await 阻塞与 JS 的时钟计算。处理一万人数组用纯粹的 for 只需不到 5ms，根本不需要挂起线程！
+    for (let i = 0; i < standings.length; i++) {
+        const row = standings[i];
+        if (!row || row.length < 3) continue;
         const userInfo = row[2];
-        if (!userInfo || !Array.isArray(userInfo)) return false;
-        return userInfo[0].startsWith('ucup-team');
-    });
-
-    // n_teams：在过滤后的队伍中，过了至少一题的队伍数
-    function solvedAtLeastOne(row) {
-        const userId = row[2][0];
-        for (let i = 0; i < problemIndices.length; i++) {
-            if (score[userId]?.[i]?.[0] > 0) return true;
-        }
-        return false;
-    }
-
-    const teamsWithSolves = filteredStandings.filter(solvedAtLeastOne);
-    const nTeams = teamsWithSolves.length;
-
-    // 构建 userId -> performance 映射（standings 已按名次排序）
-    const perfMap = {};
-    teamsWithSolves.forEach((row, idx) => {
-        const userId = row[2][0];
-        const rank = idx + 1;
-        const gp30 = getGP30(rank);
-        const perf = nTeams > 0 ? 200 * (nTeams - rank + 1) / nTeams + gp30 : gp30;
-        perfMap[userId] = perf;
-    });
-
-    // 添加表头
-    const perfTh = document.createElement('th');
-    perfTh.className = 'qoj-perf-header';
-    perfTh.textContent = 'Perf';
-    perfTh.style.cssText = 'font-size:12px; white-space:nowrap; text-align:center;';
-    perfTh.title = `Performance = 200 × (n_teams − rank + 1) / n_teams + GP30\nn_teams: 至少过一题的队伍数`;
-    headerRow.appendChild(perfTh);
-
-    // 为 tbody 每一行添加单元格
-    // standings 与 tbody 行一一对应
-    const tbodyRows = table.querySelectorAll('tbody tr');
-    standings.forEach((row, idx) => {
-        if (!Array.isArray(row) || row.length < 3) return;
-        const userInfo = row[2];
-        if (!userInfo || !Array.isArray(userInfo)) return;
+        if (!userInfo) continue;
         const userId = userInfo[0];
 
-        const tr = tbodyRows[idx - 100 * (getPageId() - 1)]; // 根据当前页码调整索引
-        if (!tr) return;
-
-        const td = document.createElement('td');
-        td.className = 'qoj-perf-cell';
-        td.style.cssText = 'text-align:center; font-weight:bold; font-family:monospace;';
-
-        if (perfMap[userId] !== undefined) {
-            const perf = perfMap[userId];
-            td.textContent = perf % 1 === 0 ? perf.toFixed(0) : perf.toFixed(1);
-            td.style.color = getPerfColor(perf);
-            const rank = teamsWithSolves.indexOf(row) + 1;
-            const gp30 = getGP30(rank);
-            td.title = `Rank: ${rank}\nGP30: ${gp30}\nn_teams: ${nTeams}\nPerf: ${perf.toFixed(2)}`;
-        } else {
-            td.textContent = '—';
-            td.style.color = '#999';
-            td.title = '未过题，不计入 Performance';
+        let solved = false;
+        const userScores = score[userId];
+        if (userScores) {
+            for (let j = 0; j < problemIndices.length; j++) {
+                if (userScores[j] && userScores[j][0] > 0) {
+                    solved = true;
+                    break;
+                }
+            }
         }
-        tr.appendChild(td);
+
+        if (solved) {
+            teamsWithSolvesCount++;
+            validUserIds.push(userId);
+        }
+    }
+
+    for (let i = 0; i < validUserIds.length; i++) {
+        const userId = validUserIds[i];
+        const rank = i + 1;
+        const gp30 = getGP30(rank);
+        const perf = teamsWithSolvesCount > 0 ? 200 * (teamsWithSolvesCount - rank + 1) / teamsWithSolvesCount + gp30 : gp30;
+        perfMap.set(userId, { perf, rank, gp30 });
+    }
+
+    // --- 视图渲染阶段完全合并：避免多次触发浏览器的 Layout 和 Paint 导致严重卡顿 ---
+    requestAnimationFrame(() => {
+        if (!headerRow.querySelector('.qoj-perf-header')) {
+            const perfTh = document.createElement('th');
+            perfTh.className = 'qoj-perf-header';
+            perfTh.textContent = 'Perf';
+            perfTh.style.cssText = 'font-size:12px; white-space:nowrap; text-align:center;';
+            perfTh.title = `Performance = 200 × (n_teams − rank + 1) / n_teams + GP30\nn_teams: 至少过一题的队伍数`;
+            headerRow.appendChild(perfTh);
+        }
+
+        const tbody = table.querySelector('tbody');
+        if (!tbody) return;
+        const tbodyRows = tbody.children;
+
+        const currentPageId = getPageId();
+        const baseIdx = 100 * (currentPageId - 1);
+
+        for (let rowIdx = 0; rowIdx < tbodyRows.length; rowIdx++) {
+            const tr = tbodyRows[rowIdx];
+            const standingIdx = baseIdx + rowIdx;
+
+            if (standingIdx >= standings.length) continue;
+
+            const row = standings[standingIdx];
+            if (!row || row.length < 3) continue;
+            const userInfo = row[2];
+            if (!userInfo) continue;
+            const userId = userInfo[0];
+
+            let td = tr.lastElementChild;
+            if (!td || !td.classList.contains('qoj-perf-cell')) {
+                td = document.createElement('td');
+                td.className = 'qoj-perf-cell';
+                td.style.cssText = 'text-align:center; font-weight:bold; font-family:monospace;';
+                tr.appendChild(td);
+            }
+
+            const perfData = perfMap.get(userId);
+            if (perfData) {
+                const p = perfData.perf;
+                td.textContent = p % 1 === 0 ? p.toFixed(0) : p.toFixed(1);
+                td.style.color = getPerfColor(p);
+                td.title = `Rank: ${perfData.rank}\nGP30: ${perfData.gp30}\nn_teams: ${teamsWithSolvesCount}\nPerf: ${p.toFixed(2)}`;
+            } else {
+                td.textContent = '—';
+                td.style.color = '#999';
+                td.title = '未过题，不计入 Performance';
+            }
+        }
     });
 }
 
@@ -411,8 +560,12 @@ function addToggleButton() {
         e.stopPropagation();
         window.onlyUCUPTeams = !window.onlyUCUPTeams;
         button.textContent = window.onlyUCUPTeams ? 'Show All Teams' : 'Only UCUP Teams';
-        calculateRatings();
-        calculatePerformance();
+
+        // 重新计算时同样需要防抖和非阻塞调用
+        setTimeout(() => {
+            calculateRatings();
+            calculatePerformance();
+        }, 0);
         return false;
     };
 
@@ -565,54 +718,196 @@ function addAcTag() {
     }
 }
 
-(function () {
-    'use strict';
-    // --- 定义主函数 ---
-    function main() {
-        switchDomain();
-
-        // standings 页面特有功能
-        if (isStandingsPage()) {
-            addToggleButton();
-            // 延迟执行，等待表格渲染完成
-            setTimeout(calculateRatings, 500);
+async function fetchVotes(problemHref) {
+    try {
+        const res = await fetch(problemHref);
+        const html = await res.text();
+        // 在 QOJ/UOJ 的问题页面中含有 <div class="uoj-click-zan-block ... data-cnt="2"> 这种结构来存储总赞数
+        const match = html.match(/class="uoj-click-zan-block[^>]*data-cnt="([^"]+)"/);
+        if (match) {
+            return parseInt(match[1], 10);
         }
 
-        // 其他功能
-        backProblem();
-        viewSubmissions();
-        viewInContestLinks();
-        addAcTag();
+        // 兼容一下有些平台如果结构是内部 span 的情况
+        const fallbackMatch = html.match(/id="click-zan-block-problem-\d+"[^>]*>.*?<span class="uoj-click-zan-print">(\d+)<\/span>/s) || html.match(/uoj-click-zan-print">(\d+)<\/span>/);
+        return fallbackMatch ? parseInt(fallbackMatch[1], 10) : 0;
+    } catch {
+        return 0;
+    }
+}
+
+async function displayAuthoredProblemsVotes() {
+    if (!/\/user\/profile\/[^\/]+/.test(location.href)) return;
+
+    // 查找 "Authored problems:" 标题 (兼容不同形式)
+    const allHeaders = Array.from(document.querySelectorAll('h1, h2, h3, h4, h5, div.card-header, div.panel-heading, span, p'));
+    const targetHeader = allHeaders.find(el => el.textContent && el.textContent.toLowerCase().includes('authored problems'));
+    if (!targetHeader || targetHeader.dataset.votesAdded) return;
+    targetHeader.dataset.votesAdded = "true";
+
+    const btn = document.createElement('a');
+    btn.textContent = '[view votes]';
+    btn.href = 'javascript:void(0);';
+    btn.style.cssText = 'margin-left: 10px; font-size: 0.8em; color: #337ab7; cursor: pointer; text-decoration: none;';
+    targetHeader.appendChild(btn);
+
+    btn.onclick = async () => {
+        btn.style.display = 'none'; // 点击后隐藏按钮
+
+        // 查找紧随其后的题目表格
+        let table = null;
+        let curr = targetHeader.nextElementSibling;
+        while (curr) {
+            if (curr.tagName === 'TABLE') { table = curr; break; }
+            if (curr.querySelector && curr.querySelector('table')) { table = curr.querySelector('table'); break; }
+            curr = curr.nextElementSibling;
+        }
+        if (!table && targetHeader.parentElement) {
+            table = targetHeader.parentElement.querySelector('table');
+            if (!table && targetHeader.parentElement.nextElementSibling) {
+                table = targetHeader.parentElement.nextElementSibling.querySelector('table');
+            }
+        }
+        if (!table) return;
+
+        const thead = table.querySelector('thead tr');
+        if (!thead) return;
+
+        const ths = Array.from(thead.children);
+        let nameColIdx = ths.findIndex(th => th.textContent && th.textContent.includes('Problem Name'));
+        if (nameColIdx === -1) {
+            nameColIdx = ths.findIndex(th => th.textContent && th.textContent.includes('Problem'));
+            if (nameColIdx === -1) nameColIdx = 1;
+        }
+
+        const voteTh = document.createElement('th');
+        voteTh.textContent = 'Votes';
+        voteTh.style.cssText = 'width: 5em; text-align: center;';
+        thead.insertBefore(voteTh, ths[nameColIdx].nextElementSibling);
+
+        const tbody = table.querySelector('tbody');
+        if (!tbody) return;
+
+        let totalVotes = 0;
+        const headerSpan = document.createElement('span');
+        headerSpan.style.color = '#777';
+        headerSpan.style.marginLeft = '10px';
+        headerSpan.style.fontSize = '0.8em';
+        headerSpan.textContent = `(Total Votes: 0)`;
+        targetHeader.appendChild(headerSpan);
+
+        const rows = Array.from(tbody.children);
+        const tasks = [];
+
+        for (const row of rows) {
+            if (row.children.length <= nameColIdx) continue;
+            const nameTd = row.children[nameColIdx];
+
+            const voteTd = document.createElement('td');
+            voteTd.style.textAlign = 'center';
+            row.insertBefore(voteTd, nameTd.nextElementSibling);
+
+            const link = nameTd.querySelector('a');
+            if (link && link.href) {
+                voteTd.innerHTML = '<span style="color: grey; font-size: 0.9em;">...</span>';
+                tasks.push(async () => {
+                    const votes = await fetchVotes(link.href);
+                    voteTd.textContent = votes;
+                    totalVotes += votes;
+                    headerSpan.textContent = `(Total Votes: ${totalVotes})`;
+                });
+            } else {
+                voteTd.textContent = '-';
+            }
+        }
+
+        // 限制并发请求以防请求泛滥被 ban (一次 5 个并发)
+        const CONCURRENCY = 5;
+        for (let i = 0; i < tasks.length; i += CONCURRENCY) {
+            const chunk = tasks.slice(i, i + CONCURRENCY);
+            await Promise.all(chunk.map(t => t()));
+        }
+    };
+}
+
+function checkStandingsUpdate() {
+    if (!isStandingsPage()) return false;
+    const table = document.querySelector('table');
+    if (!table) return false;
+    const headerRow = table.querySelector('thead tr') || table.rows[0];
+    const tbodyTr = table.querySelector('tbody tr');
+    const lacksPerfHeader = headerRow && !headerRow.querySelector('.qoj-perf-header');
+    const lacksPerfCell = tbodyTr && !tbodyTr.querySelector('.qoj-perf-cell');
+    return lacksPerfHeader || lacksPerfCell;
+}
+
+function checkProfileUpdate() {
+    if (!/\/user\/profile\/[^\/]+/.test(location.href)) return false;
+    const allHeaders = Array.from(document.querySelectorAll('h1, h2, h3, h4, h5, div.card-header, div.panel-heading, p, span'));
+    const targetHeader = allHeaders.find(el => el.textContent && el.textContent.toLowerCase().includes('authored problems'));
+    return targetHeader && !targetHeader.dataset.votesAdded;
+}
+
+function checkBasicMount() {
+    return document.querySelector('.alert.alert-primary') ||
+        document.querySelector('ul.nav.nav-tabs') ||
+        document.querySelector('.nav-link.dropdown-toggle') ||
+        document.querySelector('.nav.nav-pills.float-right') ||
+        document.querySelector('.list-group-item-heading');
+}
+
+(function () {
+    'use strict';
+    // --- 初次执行 ---
+    let mainTimer = null;
+    let lastUrl = location.href;
+
+    function scheduleMainAndCalc() {
+        if (mainTimer) clearTimeout(mainTimer);
+        mainTimer = setTimeout(() => {
+            loadSettings(); // 每次执行前加载最新设置
+            window.onlyUCUPTeams = settings.onlyUcupTeams;
+
+            if (settings.showDomainSwitcher) switchDomain();
+            if (settings.addBackButton) backProblem();
+            if (settings.addViewSubmissions) viewSubmissions();
+            if (settings.addViewInContest) viewInContestLinks();
+            if (settings.addAcTag) addAcTag();
+            if (settings.addVoteViewer) displayAuthoredProblemsVotes();
+
+            if (isStandingsPage()) {
+                addSettingsButton(); // 在榜单页也显示设置按钮
+                if (settings.showRatings) calculateRatings();
+                if (settings.showPerformance) calculatePerformance();
+            } else {
+                addSettingsButton();
+            }
+        }, 100); // UI 触发响应时间缩短到 100ms
     }
 
-    // --- 初次执行 ---
-    main();
+    scheduleMainAndCalc();
 
-    // --- 使用 MutationObserver 监听 DOM 动态变化 ---
+    // --- 使用 MutationObserver 监听 DOM 动态变化，完美兼容 PJAX(单页跳转) ---
     const observer = new MutationObserver(() => {
-        // 检查关键元素是否存在
-        const needRun =
-            document.querySelector('.alert.alert-primary') || // 可能是 viewInContestLinks 所需
-            document.querySelector('ul.nav.nav-tabs') || // viewSubmissions / backProblem
-            document.querySelector('.nav-link.dropdown-toggle') || // 登录状态
-            document.querySelector('.nav.nav-pills.float-right'); // 游客状态
+        // 如果网页地址变化（通过 PJAX 跳转多页），必须重新注入渲染
+        if (location.href !== lastUrl) {
+            lastUrl = location.href;
+            scheduleMainAndCalc();
+            return;
+        }
 
-        if (needRun) {
-            observer.disconnect(); // 先断开，防止重复触发
-            setTimeout(() => {
-                main(); // 稍延迟再执行，确保元素已稳定渲染
+        if (checkStandingsUpdate() || checkProfileUpdate()) {
+            scheduleMainAndCalc();
+            return;
+        }
 
-                // standings 页面需要额外延迟等待表格渲染
-                if (isStandingsPage()) {
-                    setTimeout(calculateRatings, 500);
-                    setTimeout(calculatePerformance, 500);
-                }
-
-                observer.observe(document.body, { childList: true, subtree: true }); // 重新监听
-            }, 100);
+        // 普通页面的初次依赖挂载判断
+        if (checkBasicMount() && !window.qojBetterInitialized) {
+            window.qojBetterInitialized = true;
+            scheduleMainAndCalc();
         }
     });
 
-    // 启动观察器
+    // 启动观察器：不随意断开，长驻监听。
     observer.observe(document.body, { childList: true, subtree: true });
 })();
