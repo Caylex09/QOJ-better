@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         QOJ Better
 // @namespace    http://tampermonkey.net/
-// @version      1.11
+// @version      1.12
 // @description  Make QOJ great again!
 // @match        https://qoj.ac/*
 // @match        https://jiang.ly/*
@@ -587,6 +587,8 @@ function calculatePerformance() {
         const userInfo = row[2];
         if (!userInfo) continue;
         const userId = userInfo[0];
+
+        if (!userId.startsWith('ucup-team')) continue;
 
         let solved = false;
         const userScores = score[userId];
