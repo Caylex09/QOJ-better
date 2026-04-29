@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         QOJ Better
 // @namespace    http://tampermonkey.net/
-// @version      1.12
+// @version      1.13
 // @description  Make QOJ great again!
 // @match        https://qoj.ac/*
 // @match        https://jiang.ly/*
@@ -11,7 +11,8 @@
 // @match        https://relia.uk/*
 // @match        https://love.larunatre.cy/*
 // @match        https://hate.larunatre.cy/*
-// @grant        none
+// @grant        GM_getValue
+// @grant        GM_setValue
 // @license      MIT
 // @author       cyx
 // ==/UserScript==
@@ -162,13 +163,21 @@ const DEFAULT_SETTINGS = {
     addViewInContest: true,
     addAcTag: true,
     addVoteViewer: true,
+    addFbJump: true,
 };
 
 let settings = {};
 
 function loadSettings() {
     try {
-        const storedSettings = JSON.parse(localStorage.getItem('qojBetterSettings'));
+        let storedSettingsStr = null;
+        if (typeof GM_getValue !== 'undefined') {
+            storedSettingsStr = GM_getValue('qojBetterSettings');
+        }
+        if (!storedSettingsStr) {
+            storedSettingsStr = localStorage.getItem('qojBetterSettings');
+        }
+        const storedSettings = storedSettingsStr ? JSON.parse(storedSettingsStr) : {};
         settings = { ...DEFAULT_SETTINGS, ...storedSettings };
         if (settings.domainVisibility) {
             settings.domainVisibility = {
@@ -188,7 +197,11 @@ function loadSettings() {
 }
 
 function saveSettings() {
-    localStorage.setItem('qojBetterSettings', JSON.stringify(settings));
+    const data = JSON.stringify(settings);
+    if (typeof GM_setValue !== 'undefined') {
+        GM_setValue('qojBetterSettings', data);
+    }
+    localStorage.setItem('qojBetterSettings', data);
 }
 
 function createSettingsModal() {
@@ -220,6 +233,7 @@ function createSettingsModal() {
                     <label><input type="checkbox" id="setting-addBackButton"> Add back link on contest problem pages</label><br>
                     <hr>
                     <p><strong>Standings</strong></p>
+                    <label><input type="checkbox" id="setting-addFbJump"> Enable Click on problem header to jump to First Blood</label><br>
                     <label><input type="checkbox" id="setting-showRatings"> Show problem difficulty</label><br>
                     <label style="margin-left: 20px;"><input type="checkbox" id="setting-onlyUcupTeams" data-depends-on="setting-showRatings"> Difficulty only counts UCUP teams</label><br>
                     <label><input type="checkbox" id="setting-showPerformance"> Show performance (GP30)</label><br>
@@ -312,6 +326,7 @@ function createSettingsModal() {
         settings.addViewInContest = document.getElementById('setting-addViewInContest').checked;
         settings.addAcTag = document.getElementById('setting-addAcTag').checked;
         settings.addVoteViewer = document.getElementById('setting-addVoteViewer').checked;
+        settings.addFbJump = document.getElementById('setting-addFbJump').checked;
 
         saveSettings();
         document.getElementById('qoj-settings-modal').style.display = 'none';
@@ -353,6 +368,7 @@ function createSettingsModal() {
             document.getElementById('setting-addViewInContest').checked = settings.addViewInContest;
             document.getElementById('setting-addAcTag').checked = settings.addAcTag;
             document.getElementById('setting-addVoteViewer').checked = settings.addVoteViewer;
+            document.getElementById('setting-addFbJump').checked = settings.addFbJump;
 
             updateDependencies();
         }
@@ -721,6 +737,175 @@ function getPageId() {
     return match[1] || '1';
 }
 
+function initFbJump() {
+    if (window.__fbJumpInit) {
+        if (window.checkFbHash) window.checkFbHash();
+        return;
+    }
+    window.__fbJumpInit = true;
+
+    const s = document.createElement('style');
+    s.innerHTML = `
+        th:has(a[href*="/problem/"]):hover { cursor: crosshair !important; background-color: rgba(0,0,0,0.08) !important; }
+        .fb-highlight { background-color: rgba(255, 99, 71, 0.4) !important; transition: background-color 0.3s; }
+    `;
+    document.head.appendChild(s);
+
+    const findFirstBloodRow = (doc, columnIndex) => {
+        const rows = doc.querySelectorAll('table tbody tr');
+        for (let row of rows) {
+            if (row.querySelector('th') || row.className.match(/summary|sortfree/i) || row.closest('tfoot')) continue;
+            if (columnIndex >= row.children.length) continue;
+            const cell = row.children[columnIndex];
+            if (cell.classList.contains('table-success')) {
+                return row;
+            }
+        }
+        return null;
+    };
+
+    const highlightRow = (row) => {
+        if (!row) return;
+        row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        row.classList.add('fb-highlight');
+        setTimeout(() => row.classList.remove('fb-highlight'), 1500);
+    };
+
+    window.checkFbHash = () => {
+        const hashMatch = location.hash.match(/^#fb-(\d+)$/);
+        if (hashMatch) {
+            setTimeout(() => {
+                const targetRow = findFirstBloodRow(document, parseInt(hashMatch[1]));
+                if (targetRow) highlightRow(targetRow);
+                history.replaceState(null, null, location.pathname + location.search);
+            }, 600);
+        }
+    };
+
+    window.checkFbHash();
+
+    document.addEventListener('click', async (event) => {
+        const tableHeader = event.target.closest('th');
+        if (!tableHeader) return;
+        if (!tableHeader.querySelector('a[href*="/problem/"]')) return;
+
+        // 允许直接点击 A 标签跳转到题目，只有点到 TH 空白处才触发一血搜寻
+        if (event.target.closest('a')) return;
+
+        const tableRow = tableHeader.parentElement;
+        const columnIndex = Array.prototype.indexOf.call(tableRow.children, tableHeader);
+        if (columnIndex < 0) return;
+
+        event.preventDefault();
+        event.stopPropagation();
+
+        // --- 纯前端翻页查找逻辑 (兼容 QOJ 的 Vue/AJAX 无刷新翻页) ---
+        const standingsData = (() => {
+            if (typeof unsafeWindow !== 'undefined' && unsafeWindow.standings) return { standingsArray: unsafeWindow.standings, scoresObject: unsafeWindow.score };
+            if (typeof window.standings !== 'undefined') return { standingsArray: window.standings, scoresObject: window.score };
+            if (typeof standings !== 'undefined') return { standingsArray: standings, scoresObject: typeof score !== 'undefined' ? score : null };
+            return null;
+        })();
+
+        let targetPageText = null;
+
+        // 如果存在全局变量 standings 和 score，直接计算出首杀人所在页数 (按每页 100 队计算)
+        if (standingsData && standingsData.standingsArray && standingsData.scoresObject) {
+            let firstBloodRowIndex = -1;
+            let minMinTime = Infinity;
+            const problemCacheIndex = getProblemIndices().indexOf(columnIndex);
+
+            if (problemCacheIndex !== -1) {
+                for (let i = 0; i < standingsData.standingsArray.length; i++) {
+                    const rowData = standingsData.standingsArray[i];
+                    if (!rowData || rowData.length < 3) continue;
+                    const userId = rowData[2][0];
+                    const userScores = standingsData.scoresObject[userId];
+                    if (userScores && userScores[problemCacheIndex]) {
+                        const problemScoreObj = userScores[problemCacheIndex];
+                        if (problemScoreObj && problemScoreObj[0] > 0) { // AC
+                            const submissionTime = Number(problemScoreObj[1]);
+                            if (!isNaN(submissionTime) && submissionTime < minMinTime) {
+                                minMinTime = submissionTime;
+                                firstBloodRowIndex = i;
+                            } else if (isNaN(submissionTime) && firstBloodRowIndex === -1) {
+                                firstBloodRowIndex = i; // 无时间数据时保底取最高名次者
+                            }
+                        }
+                    }
+                }
+            }
+            if (firstBloodRowIndex !== -1) {
+                targetPageText = String(Math.floor(firstBloodRowIndex / 100) + 1);
+            }
+        }
+
+        const currentTargetRow = findFirstBloodRow(document, columnIndex);
+
+        if (currentTargetRow) {
+            highlightRow(currentTargetRow);
+            return;
+        }
+
+        const pageLinks = Array.from(document.querySelectorAll('.pagination .page-item a.page-link'))
+            .filter(link => /^\d+$/.test(link.textContent.trim()));
+
+        if (pageLinks.length === 0) return;
+
+        const activePageElement = document.querySelector('.pagination .page-item.active a.page-link');
+        const originalPageText = activePageElement ? activePageElement.textContent.trim() : null;
+
+        document.body.style.cursor = tableHeader.style.cursor = 'wait';
+
+        // 方法 1: 如果计算出了明确的目标页码，且它正好在底部的数字按钮清单里，直接点他
+        if (targetPageText) {
+            const exactLink = pageLinks.find(link => link.textContent.trim() === targetPageText);
+            if (exactLink) {
+                exactLink.click();
+                setTimeout(() => {
+                    const targetRow = findFirstBloodRow(document, columnIndex);
+                    if (targetRow) {
+                        highlightRow(targetRow);
+                    }
+                    document.body.style.cursor = tableHeader.style.cursor = '';
+                }, 200); // 留给 Vue 重新渲染的时间
+                return;
+            }
+        }
+
+        // 方法 2: 如果由于省略号之类的没法直接找到，或是上面计算失败，则逐个点击可见的数字按钮进行地毯式搜寻
+        const searchAcrossPages = (linkIndex) => {
+            if (linkIndex >= pageLinks.length) {
+                // 没找到，恢复原样
+                const restoreLink = Array.from(document.querySelectorAll('.pagination .page-item a.page-link'))
+                    .find(link => link.textContent.trim() === originalPageText);
+                if (restoreLink) restoreLink.click();
+                document.body.style.cursor = tableHeader.style.cursor = '';
+                return;
+            }
+
+            const currentLink = pageLinks[linkIndex];
+            if (currentLink.textContent.trim() === originalPageText) {
+                searchAcrossPages(linkIndex + 1);
+                return;
+            }
+
+            currentLink.click();
+            setTimeout(() => {
+                const targetRow = findFirstBloodRow(document, columnIndex);
+                if (targetRow) {
+                    highlightRow(targetRow);
+                    document.body.style.cursor = tableHeader.style.cursor = '';
+                    return;
+                }
+                searchAcrossPages(linkIndex + 1);
+            }, 100);
+        };
+
+        searchAcrossPages(0);
+    }, true);
+}
+
 // ========== 其他功能 ==========
 
 function backProblem() {
@@ -874,9 +1059,27 @@ async function fetchVotes(problemHref) {
 async function displayAuthoredProblemsVotes() {
     if (!/\/user\/profile\/[^\/]+/.test(location.href)) return;
 
-    // 查找 "Authored problems:" 标题 (兼容不同形式)
-    const allHeaders = Array.from(document.querySelectorAll('h1, h2, h3, h4, h5, div.card-header, div.panel-heading, span, p'));
-    const targetHeader = allHeaders.find(el => el.textContent && el.textContent.toLowerCase().includes('authored problems'));
+    // 寻找包含题目链接的表格，通常就是 Authored problems
+    const tables = document.querySelectorAll('table');
+    let targetTable = null;
+    for (const table of tables) {
+        const firstLink = table.querySelector('tbody tr td a');
+        if (firstLink && /\/problem\/\d+/.test(firstLink.href)) {
+            targetTable = table;
+            break;
+        }
+    }
+
+    if (!targetTable) return;
+
+    // 找到表格对应的标题
+    let targetHeader = targetTable.parentElement;
+    if (targetHeader.classList.contains('table-responsive')) {
+        targetHeader = targetHeader.previousElementSibling;
+    } else {
+        targetHeader = targetTable.previousElementSibling;
+    }
+
     if (!targetHeader || targetHeader.dataset.votesAdded) return;
     targetHeader.dataset.votesAdded = "true";
 
@@ -889,29 +1092,14 @@ async function displayAuthoredProblemsVotes() {
     btn.onclick = async () => {
         btn.style.display = 'none'; // 点击后隐藏按钮
 
-        // 查找紧随其后的题目表格
-        let table = null;
-        let curr = targetHeader.nextElementSibling;
-        while (curr) {
-            if (curr.tagName === 'TABLE') { table = curr; break; }
-            if (curr.querySelector && curr.querySelector('table')) { table = curr.querySelector('table'); break; }
-            curr = curr.nextElementSibling;
-        }
-        if (!table && targetHeader.parentElement) {
-            table = targetHeader.parentElement.querySelector('table');
-            if (!table && targetHeader.parentElement.nextElementSibling) {
-                table = targetHeader.parentElement.nextElementSibling.querySelector('table');
-            }
-        }
-        if (!table) return;
-
+        const table = targetTable;
         const thead = table.querySelector('thead tr');
         if (!thead) return;
 
         const ths = Array.from(thead.children);
         let nameColIdx = ths.findIndex(th => th.textContent && th.textContent.includes('Problem Name'));
         if (nameColIdx === -1) {
-            nameColIdx = ths.findIndex(th => th.textContent && th.textContent.includes('Problem'));
+            nameColIdx = ths.findIndex(th => th.textContent && (th.textContent.includes('Problem') || th.textContent.includes('题目')));
             if (nameColIdx === -1) nameColIdx = 1;
         }
 
@@ -978,9 +1166,20 @@ function checkStandingsUpdate() {
 
 function checkProfileUpdate() {
     if (!/\/user\/profile\/[^\/]+/.test(location.href)) return false;
-    const allHeaders = Array.from(document.querySelectorAll('h1, h2, h3, h4, h5, div.card-header, div.panel-heading, p, span'));
-    const targetHeader = allHeaders.find(el => el.textContent && el.textContent.toLowerCase().includes('authored problems'));
-    return targetHeader && !targetHeader.dataset.votesAdded;
+    const tables = document.querySelectorAll('table');
+    for (const table of tables) {
+        const firstLink = table.querySelector('tbody tr td a');
+        if (firstLink && /\/problem\/\d+/.test(firstLink.href)) {
+            let targetHeader = table.parentElement;
+            if (targetHeader.classList.contains('table-responsive')) {
+                targetHeader = targetHeader.previousElementSibling;
+            } else {
+                targetHeader = table.previousElementSibling;
+            }
+            return targetHeader && !targetHeader.dataset.votesAdded;
+        }
+    }
+    return false;
 }
 
 function checkBasicMount() {
@@ -1014,6 +1213,7 @@ function checkBasicMount() {
                 addSettingsButton(); // 在榜单页也显示设置按钮
                 if (settings.showRatings) calculateRatings();
                 if (settings.showPerformance) calculatePerformance();
+                if (settings.addFbJump) initFbJump();
             } else {
                 addSettingsButton();
             }

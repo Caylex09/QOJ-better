@@ -9,6 +9,7 @@
 - Contests
   - Add back link on contest problem pages：快速切换为题库内看题。
 - Standings
+  - Enable Click on problem header to jump to First Blood：在榜单界面点击题号可以跳转首杀队伍信息。
   - Show problem difficulty：显示本题预测 Codeforces 评分。具体计算来源为@a_little_cute 人脑拟合的函数，并且使用 Github Copilot 缝合进了脚本并做了些微修复。当然，这个函数是人脑拟合出来的，QOJ 的各种比赛也和 CF Rules 相去甚远，故仅图一乐，并非一个标准化的换算。可选项为：
     - Difficulty only counts UCUP teams：[true/false] 表示是否仅计算 ucup-teams 带来的影响。因为 ucup-teams 有长期稳定的 rating 计算。
   - Show performance (GP30)：比赛界面显示当前 performance，按照 [Universal Cup Rules](https://ucup.ac/rule/) 的规则计算。
