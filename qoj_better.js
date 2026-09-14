@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         QOJ Better
 // @namespace    http://tampermonkey.net/
-// @version      1.14
+// @version      1.15
 // @description  Make QOJ great again!
 // @match        https://qoj.ac/*
 // @match        https://jiang.ly/*
@@ -164,6 +164,8 @@ const DEFAULT_SETTINGS = {
     addAcTag: true,
     addVoteViewer: true,
     addFbJump: true,
+    hideVote: false,
+    viewAcSubmissions: true,
 };
 
 let settings = {};
@@ -228,6 +230,7 @@ function createSettingsModal() {
                     <label><input type="checkbox" id="setting-addViewSubmissions"> Add view-my-submissions link</label><br>
                     <label><input type="checkbox" id="setting-addViewInContest"> Show view-in-contest link on problem pages</label><br>
                     <label><input type="checkbox" id="setting-addAcTag"> Add Accepted badge for full score</label><br>
+                    <label><input type="checkbox" id="setting-hideVote"> Hide vote numbers</label><br>
                     <hr>
                     <p><strong>Contests</strong></p>
                     <label><input type="checkbox" id="setting-addBackButton"> Add back link on contest problem pages</label><br>
@@ -240,6 +243,9 @@ function createSettingsModal() {
                     <hr>
                     <p><strong>Profile</strong></p>
                     <label><input type="checkbox" id="setting-addVoteViewer"> Add authored problems vote viewer</label><br>
+                    <hr>
+                    <p><strong>Submissions</strong></p>
+                    <label><input type="checkbox" id="setting-viewAcSubmissions"> View accepted submissions</label><br>
                 </div>
                 <div style="text-align:right; margin-top:20px;">
                     <button id="qoj-settings-cancel" style="padding: 8px 15px; background-color: #6c757d; color: white; border: none; border-radius: 3px; cursor: pointer; margin-right: 8px;">Cancel</button>
@@ -325,8 +331,10 @@ function createSettingsModal() {
         settings.addViewSubmissions = document.getElementById('setting-addViewSubmissions').checked;
         settings.addViewInContest = document.getElementById('setting-addViewInContest').checked;
         settings.addAcTag = document.getElementById('setting-addAcTag').checked;
+        settings.hideVote = document.getElementById('setting-hideVote').checked;
         settings.addVoteViewer = document.getElementById('setting-addVoteViewer').checked;
         settings.addFbJump = document.getElementById('setting-addFbJump').checked;
+        settings.viewAcSubmissions = document.getElementById('setting-viewAcSubmissions').checked;
 
         saveSettings();
         document.getElementById('qoj-settings-modal').style.display = 'none';
@@ -367,8 +375,10 @@ function createSettingsModal() {
             document.getElementById('setting-addViewSubmissions').checked = settings.addViewSubmissions;
             document.getElementById('setting-addViewInContest').checked = settings.addViewInContest;
             document.getElementById('setting-addAcTag').checked = settings.addAcTag;
+            document.getElementById('setting-hideVote').checked = settings.hideVote;
             document.getElementById('setting-addVoteViewer').checked = settings.addVoteViewer;
             document.getElementById('setting-addFbJump').checked = settings.addFbJump;
+            document.getElementById('setting-viewAcSubmissions').checked = settings.viewAcSubmissions;
 
             updateDependencies();
         }
@@ -989,14 +999,15 @@ function addAcTag() {
         if (!infoRow) return;
         if (infoRow.querySelector('.badge-fullscore')) return;
 
-        const totalEl = [...infoRow.querySelectorAll('.badge.badge-secondary')]
-            .find(e => e.textContent.includes('Total points'));
-        if (!totalEl) return;
+        // const totalEl = [...infoRow.querySelectorAll('.badge.badge-secondary')]
+        //     .find(e => e.textContent.includes('Total points'));
+        // if (!totalEl) return;
 
-        const total = parseFloat(totalEl.textContent.replace(/[^\d.]/g, ''));
-        if (isNaN(total)) return;
+        // const total = parseFloat(totalEl.textContent.replace(/[^\d.]/g, ''));
+        // if (isNaN(total)) return;
 
-        fetch(`/submissions?problem_id=${pid}&submitter=${username}&min_score=${total}&max_score=${total}`)
+        // fetch(`/submissions?problem_id=${pid}&submitter=${username}&min_score=${total}&max_score=${total}`)
+        fetch(`/submissions?problem_id=${pid}&submitter=${username}&accepted=1`)
             .then(res => res.text())
             .then(html => {
                 const match = html.match(/<td><a href="(\/submission\/\d+)">/);
@@ -1191,6 +1202,37 @@ function checkBasicMount() {
         document.querySelector('.list-group-item-heading');
 }
 
+function hideProblemsVotes() {
+    if (document.getElementById('qoj-hide-vote-style')) return;
+
+    const style = document.createElement('style');
+    style.id = 'qoj-hide-vote-style';
+    style.textContent = `
+        .uoj-click-zan-cnt,
+        .uoj-click-zan-print {
+            display: none !important;
+        }
+    `;
+    document.head.appendChild(style);
+}
+
+function viewAcSubmissions() {
+    if (!location.pathname.startsWith('/submissions')) return;
+
+    const mySubmissions = Array.from(document.querySelectorAll('a.btn.btn-primary.btn-sm'))
+        .find(link => link.textContent.trim() === 'My Submissions');
+    if (!mySubmissions || mySubmissions.parentElement.querySelector('.qoj-accepted-submissions')) return;
+
+    const acceptedSubmissions = mySubmissions.cloneNode(false);
+    acceptedSubmissions.classList.add('qoj-accepted-submissions');
+    acceptedSubmissions.textContent = 'My Accepted Submissions';
+    const acceptedUrl = new URL(mySubmissions.href, location.href);
+    acceptedUrl.searchParams.set('accepted', '1');
+    acceptedSubmissions.href = acceptedUrl.toString();
+    acceptedSubmissions.style.marginRight = '5px';
+    mySubmissions.before(acceptedSubmissions);
+}
+
 (function () {
     'use strict';
     // --- 初次执行 ---
@@ -1209,9 +1251,12 @@ function checkBasicMount() {
             if (settings.addViewInContest) viewInContestLinks();
             if (settings.addAcTag) addAcTag();
             if (settings.addVoteViewer) displayAuthoredProblemsVotes();
+            if (settings.hideVote) hideProblemsVotes();
+            if (settings.viewAcSubmissions) viewAcSubmissions();
+
+            addSettingsButton();
 
             if (isStandingsPage()) {
-                addSettingsButton(); // 在榜单页也显示设置按钮
                 if (settings.showRatings) calculateRatings();
                 if (settings.showPerformance) calculatePerformance();
                 if (settings.addFbJump) initFbJump();
