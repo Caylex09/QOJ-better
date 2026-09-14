@@ -2,12 +2,16 @@
 
 - General
   - Show mirror switcher：切换 `contest.ucup.ac`，`qoj.ac`，`jiang.ly`，`huang.lt`，`oj.qiuly.org`，`relia.uk`，`love.larunatre.cy`，`hate.larunatre.cy` 域名。
+  
 - Problems
   - Add view-my-submissions link： 快速查看本题个人提交记录。
   - Show view-in-contest link on problem pages：快速切换为比赛内看题。
   - Add Accepted badge for full score：添加 AC 标记，点击可以查看最后一发 AC 记录，AC 之后将 Submit 按钮设为绿色。
+  - Hide vote numbers：隐藏题目评分数。
+
 - Contests
   - Add back link on contest problem pages：快速切换为题库内看题。
+
 - Standings
   - Enable Click on problem header to jump to First Blood：在榜单界面点击题号可以跳转首杀队伍信息。
   - Show problem difficulty：显示本题预测 Codeforces 评分。具体计算来源为@a_little_cute 人脑拟合的函数，并且使用 Github Copilot 缝合进了脚本并做了些微修复。当然，这个函数是人脑拟合出来的，QOJ 的各种比赛也和 CF Rules 相去甚远，故仅图一乐，并非一个标准化的换算。可选项为：
@@ -16,3 +20,6 @@
 
 - Profile
   - Add authored problems vote viewer：可以在个人界面查看该用户所有 authored problems 的 votes 详情与总和。
+
+- submissions
+  - View accepted submissions：可以在提交记录界面只查看自己的通过记录。
