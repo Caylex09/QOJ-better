@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         QOJ Better
 // @namespace    http://tampermonkey.net/
-// @version      1.15
+// @version      1.16
 // @description  Make QOJ great again!
 // @match        https://qoj.ac/*
 // @match        https://jiang.ly/*
@@ -818,102 +818,155 @@ function initFbJump() {
             return null;
         })();
 
-        let targetPageText = null;
+        const problemCacheIndex = getProblemIndices().indexOf(columnIndex);
+        let firstBloodRowIndex = -1;
 
-        // 如果存在全局变量 standings 和 score，直接计算出首杀人所在页数 (按每页 100 队计算)
-        if (standingsData && standingsData.standingsArray && standingsData.scoresObject) {
-            let firstBloodRowIndex = -1;
-            let minMinTime = Infinity;
-            const problemCacheIndex = getProblemIndices().indexOf(columnIndex);
+        // standings 中的排名与 long_table 的行顺序一致，可以直接算出首杀所在页。
+        // 时间相同时再比较 submission id，避免同秒 AC 时跳到较晚的提交。
+        if (
+            problemCacheIndex !== -1 &&
+            standingsData &&
+            standingsData.standingsArray &&
+            standingsData.scoresObject
+        ) {
+            let bestTime = Infinity;
+            let bestSubmissionId = Infinity;
 
-            if (problemCacheIndex !== -1) {
-                for (let i = 0; i < standingsData.standingsArray.length; i++) {
-                    const rowData = standingsData.standingsArray[i];
-                    if (!rowData || rowData.length < 3) continue;
-                    const userId = rowData[2][0];
-                    const userScores = standingsData.scoresObject[userId];
-                    if (userScores && userScores[problemCacheIndex]) {
-                        const problemScoreObj = userScores[problemCacheIndex];
-                        if (problemScoreObj && problemScoreObj[0] > 0) { // AC
-                            const submissionTime = Number(problemScoreObj[1]);
-                            if (!isNaN(submissionTime) && submissionTime < minMinTime) {
-                                minMinTime = submissionTime;
-                                firstBloodRowIndex = i;
-                            } else if (isNaN(submissionTime) && firstBloodRowIndex === -1) {
-                                firstBloodRowIndex = i; // 无时间数据时保底取最高名次者
-                            }
-                        }
-                    }
+            for (let i = 0; i < standingsData.standingsArray.length; i++) {
+                const rowData = standingsData.standingsArray[i];
+                const userId = rowData && rowData[2] && rowData[2][0];
+                if (!userId) continue;
+
+                const problemScore = standingsData.scoresObject[userId]?.[problemCacheIndex];
+                if (!problemScore || Number(problemScore[0]) <= 0) continue;
+
+                const rawSubmissionTime = problemScore[1];
+                const rawSubmissionId = problemScore[2];
+                const submissionTime = rawSubmissionTime === null || rawSubmissionTime === undefined || rawSubmissionTime === ''
+                    ? NaN
+                    : Number(rawSubmissionTime);
+                const submissionId = rawSubmissionId === null || rawSubmissionId === undefined || rawSubmissionId === ''
+                    ? NaN
+                    : Number(rawSubmissionId);
+
+                if (!Number.isFinite(submissionTime)) {
+                    // 缺少时间数据时，保底使用排名最靠前的 AC 队伍。
+                    if (firstBloodRowIndex === -1) firstBloodRowIndex = i;
+                    continue;
                 }
-            }
-            if (firstBloodRowIndex !== -1) {
-                targetPageText = String(Math.floor(firstBloodRowIndex / 100) + 1);
+
+                const comparableSubmissionId = Number.isFinite(submissionId)
+                    ? submissionId
+                    : Infinity;
+
+                if (
+                    submissionTime < bestTime ||
+                    (submissionTime === bestTime && comparableSubmissionId < bestSubmissionId)
+                ) {
+                    bestTime = submissionTime;
+                    bestSubmissionId = comparableSubmissionId;
+                    firstBloodRowIndex = i;
+                }
             }
         }
 
-        const currentTargetRow = findFirstBloodRow(document, columnIndex);
-
-        if (currentTargetRow) {
-            highlightRow(currentTargetRow);
+        // 没有全量榜单数据时，仍保留原先的当前页 DOM 查找作为降级方案。
+        if (firstBloodRowIndex === -1) {
+            const currentTargetRow = findFirstBloodRow(document, columnIndex);
+            if (currentTargetRow) highlightRow(currentTargetRow);
             return;
         }
 
-        const pageLinks = Array.from(document.querySelectorAll('.pagination .page-item a.page-link'))
-            .filter(link => /^\d+$/.test(link.textContent.trim()));
+        const PAGE_SIZE = 100;
+        const targetPage = Math.floor(firstBloodRowIndex / PAGE_SIZE) + 1;
+        const rowOnPage = firstBloodRowIndex % PAGE_SIZE;
+        const standingsRoot = document.querySelector('#standings') || document;
 
-        if (pageLinks.length === 0) return;
-
-        const activePageElement = document.querySelector('.pagination .page-item.active a.page-link');
-        const originalPageText = activePageElement ? activePageElement.textContent.trim() : null;
-
-        document.body.style.cursor = tableHeader.style.cursor = 'wait';
-
-        // 方法 1: 如果计算出了明确的目标页码，且它正好在底部的数字按钮清单里，直接点他
-        if (targetPageText) {
-            const exactLink = pageLinks.find(link => link.textContent.trim() === targetPageText);
-            if (exactLink) {
-                exactLink.click();
-                setTimeout(() => {
-                    const targetRow = findFirstBloodRow(document, columnIndex);
-                    if (targetRow) {
-                        highlightRow(targetRow);
-                    }
-                    document.body.style.cursor = tableHeader.style.cursor = '';
-                }, 200); // 留给 Vue 重新渲染的时间
-                return;
-            }
-        }
-
-        // 方法 2: 如果由于省略号之类的没法直接找到，或是上面计算失败，则逐个点击可见的数字按钮进行地毯式搜寻
-        const searchAcrossPages = (linkIndex) => {
-            if (linkIndex >= pageLinks.length) {
-                // 没找到，恢复原样
-                const restoreLink = Array.from(document.querySelectorAll('.pagination .page-item a.page-link'))
-                    .find(link => link.textContent.trim() === originalPageText);
-                if (restoreLink) restoreLink.click();
-                document.body.style.cursor = tableHeader.style.cursor = '';
-                return;
-            }
-
-            const currentLink = pageLinks[linkIndex];
-            if (currentLink.textContent.trim() === originalPageText) {
-                searchAcrossPages(linkIndex + 1);
-                return;
-            }
-
-            currentLink.click();
-            setTimeout(() => {
-                const targetRow = findFirstBloodRow(document, columnIndex);
-                if (targetRow) {
-                    highlightRow(targetRow);
-                    document.body.style.cursor = tableHeader.style.cursor = '';
-                    return;
-                }
-                searchAcrossPages(linkIndex + 1);
-            }, 100);
+        const currentPage = () => {
+            const active = standingsRoot.querySelector(
+                '.pagination li.active > a, .pagination .page-item.active .page-link'
+            );
+            const page = active ? Number(active.textContent.trim()) : 1;
+            return Number.isInteger(page) && page > 0 ? page : 1;
         };
 
-        searchAcrossPages(0);
+        const livePageLinks = () => Array.from(standingsRoot.querySelectorAll(
+            '.pagination li:not(.disabled) > a, ' +
+            '.pagination .page-item:not(.disabled) .page-link'
+        ));
+
+        const activatePageLink = (link) => {
+            const pageJQuery =
+                (typeof unsafeWindow !== 'undefined' && unsafeWindow.jQuery) ||
+                window.jQuery;
+
+            // long_table 把 click handler 直接绑在分页链接上，并同步重绘 DOM。
+            // triggerHandler 可以避免 href="#standings" 干扰页面位置。
+            if (pageJQuery) {
+                pageJQuery(link).triggerHandler('click');
+                return true;
+            }
+
+            link.click();
+            return false;
+        };
+
+        const goToPage = async (page) => {
+            const maxSteps = Math.ceil(standingsData.standingsArray.length / PAGE_SIZE) + 2;
+
+            for (let step = 0; step < maxSteps; step++) {
+                const before = currentPage();
+                if (before === page) return true;
+
+                // 每一步都重新读取分页 DOM。翻过第 6 页后，新出现的页码才能继续使用。
+                const links = livePageLinks();
+                let link = links.find(item => Number(item.textContent.trim()) === page);
+
+                if (!link) {
+                    // 优先跳到目标方向最远的可见数字页；上一页/下一页箭头只作保底。
+                    const numberedLinks = links
+                        .map(item => ({ item, page: Number(item.textContent.trim()) }))
+                        .filter(item => Number.isInteger(item.page) && item.page > 0);
+                    const candidates = numberedLinks.filter(item => page < before
+                        ? item.page < before && item.page >= page
+                        : item.page > before && item.page <= page);
+
+                    if (candidates.length > 0) {
+                        candidates.sort((a, b) => page < before ? a.page - b.page : b.page - a.page);
+                        link = candidates[0].item;
+                    } else {
+                        link = page < before ? links[0] : links[links.length - 1];
+                    }
+                }
+                if (!link) return false;
+
+                const usedTriggerHandler = activatePageLink(link);
+
+                if (currentPage() === before) {
+                    // 兼容少数镜像异步重绘分页的情况。
+                    await new Promise(resolve => setTimeout(resolve, 0));
+                }
+                if (currentPage() === before && usedTriggerHandler) {
+                    // 若镜像改成了委托事件，triggerHandler 不会冒泡；回退到原生点击。
+                    link.click();
+                    await new Promise(resolve => setTimeout(resolve, 0));
+                }
+                if (currentPage() === before) return false;
+            }
+
+            return currentPage() === page;
+        };
+
+        document.body.style.cursor = tableHeader.style.cursor = 'wait';
+        try {
+            if (!await goToPage(targetPage)) return;
+
+            const rows = standingsRoot.querySelectorAll('tbody tr');
+            const targetRow = rows[rowOnPage] || findFirstBloodRow(document, columnIndex);
+            if (targetRow) highlightRow(targetRow);
+        } finally {
+            document.body.style.cursor = tableHeader.style.cursor = '';
+        }
     }, true);
 }
 
