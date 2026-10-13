@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         QOJ Better
 // @namespace    http://tampermonkey.net/
-// @version      1.16
+// @version      1.17
 // @description  Make QOJ great again!
 // @match        https://qoj.ac/*
 // @match        https://jiang.ly/*
@@ -11,6 +11,7 @@
 // @match        https://relia.uk/*
 // @match        https://love.larunatre.cy/*
 // @match        https://hate.larunatre.cy/*
+// @match        https://love-qingyu.qoj.ac/
 // @grant        GM_getValue
 // @grant        GM_setValue
 // @license      MIT
@@ -31,6 +32,7 @@ const DOMAIN_OPTIONS = [
     { host: 'relia.uk', contestOnly: false },
     { host: 'love.larunatre.cy', contestOnly: false },
     { host: 'hate.larunatre.cy', contestOnly: false },
+    { host: 'love-qingyu.qoj.ac', contestOnly: false },
     { host: 'contest.ucup.ac', contestOnly: true },
 ];
 

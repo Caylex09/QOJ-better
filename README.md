@@ -1,7 +1,7 @@
 实现功能：
 
 - General
-  - Show mirror switcher：切换 `contest.ucup.ac`，`qoj.ac`，`jiang.ly`，`huang.lt`，`oj.qiuly.org`，`relia.uk`，`love.larunatre.cy`，`hate.larunatre.cy` 域名。
+  - Show mirror switcher：切换 `contest.ucup.ac`，`qoj.ac`，`jiang.ly`，`huang.lt`，`oj.qiuly.org`，`relia.uk`，`love.larunatre.cy`，`hate.larunatre.cy`，`love-qingyu.qoj.ac` 域名。
   
 - Problems
   - Add view-my-submissions link： 快速查看本题个人提交记录。
